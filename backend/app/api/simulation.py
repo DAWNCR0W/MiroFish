@@ -11,6 +11,7 @@ from . import simulation_bp
 from ..config import Config
 from ..services.graph_entity_reader import GraphEntityReader
 from ..services.oasis_profile_generator import OasisProfileGenerator
+from ..services.report_agent import ReportManager, ReportStatus
 from ..services.simulation_manager import SimulationManager, SimulationStatus
 from ..services.simulation_runner import SimulationRunner, RunnerStatus
 from ..utils.logger import get_logger
@@ -795,56 +796,22 @@ def _get_report_id_for_simulation(simulation_id: str) -> str:
     """
     simulation에 대응하는 최신 report_id를 가져온다.
 
-    reports 디렉터리를 순회해 simulation_id와 일치하는 report를 찾고,
-    여러 개가 있으면 최신 항목( created_at 기준 )을 반환한다.
-
     Args:
         simulation_id: 시뮬레이션 ID
 
     Returns:
         report_id 또는 None
     """
-    import json
-    from datetime import datetime
-
-    # reports 디렉터리 경로: backend/uploads/reports
-    # __file__은 app/api/simulation.py이므로 backend/까지 두 단계 위로 올라간다.
-    reports_dir = os.path.join(os.path.dirname(__file__), '../../uploads/reports')
-    if not os.path.exists(reports_dir):
-        return None
-
-    matching_reports = []
-
     try:
-        for report_folder in os.listdir(reports_dir):
-            report_path = os.path.join(reports_dir, report_folder)
-            if not os.path.isdir(report_path):
-                continue
-
-            meta_file = os.path.join(report_path, "meta.json")
-            if not os.path.exists(meta_file):
-                continue
-
-            try:
-                with open(meta_file, 'r', encoding='utf-8') as f:
-                    meta = json.load(f)
-
-                if meta.get("simulation_id") == simulation_id:
-                    matching_reports.append({
-                        "report_id": meta.get("report_id"),
-                        "created_at": meta.get("created_at", ""),
-                        "status": meta.get("status", "")
-                    })
-            except Exception:
-                continue
-
-        if not matching_reports:
+        report = ReportManager.get_report_by_simulation(simulation_id)
+        if (
+            not report
+            or report.status != ReportStatus.COMPLETED
+            or not ReportManager.is_report_renderable(report)
+        ):
             return None
 
-        # 생성 시간 내림차순으로 정렬해 최신 항목을 반환한다.
-        matching_reports.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-        return matching_reports[0].get("report_id")
-
+        return report.report_id
     except Exception as e:
         logger.warning(f"simulation {simulation_id}의 report 검색 실패: {e}")
         return None

@@ -19,6 +19,15 @@ from ..utils.logger import get_logger
 logger = get_logger('mirofish.api.report')
 
 
+def _is_completed_renderable_report(report) -> bool:
+    """완료되었고 실제로 표시 가능한 보고서인지 확인합니다."""
+    return bool(
+        report
+        and report.status == ReportStatus.COMPLETED
+        and ReportManager.is_report_renderable(report)
+    )
+
+
 # ============== 보고서 생성 인터페이스 ==============
 
 @report_bp.route('/generate', methods=['POST'])
@@ -71,7 +80,7 @@ def generate_report():
         # 이미 보고서가 있는지 확인한다.
         if not force_regenerate:
             existing_report = ReportManager.get_report_by_simulation(simulation_id)
-            if existing_report and existing_report.status == ReportStatus.COMPLETED:
+            if _is_completed_renderable_report(existing_report):
                 return jsonify({
                     "success": True,
                     "data": {
@@ -226,7 +235,7 @@ def get_generate_status():
         # simulation_id가 제공되면, 이미 완료된 보고서가 있는지 먼저 확인한다.
         if simulation_id:
             existing_report = ReportManager.get_report_by_simulation(simulation_id)
-            if existing_report and existing_report.status == ReportStatus.COMPLETED:
+            if _is_completed_renderable_report(existing_report):
                 return jsonify({
                     "success": True,
                     "data": {
@@ -721,9 +730,9 @@ def check_report_status(simulation_id: str):
     try:
         report = ReportManager.get_report_by_simulation(simulation_id)
         
-        has_report = report is not None
-        report_status = report.status.value if report else None
-        report_id = report.report_id if report else None
+        has_report = report is not None and ReportManager.is_report_renderable(report)
+        report_status = report.status.value if has_report else None
+        report_id = report.report_id if has_report else None
         
         # 보고서가 완료된 뒤에만 interview를 잠금 해제한다.
         interview_unlocked = has_report and report.status == ReportStatus.COMPLETED

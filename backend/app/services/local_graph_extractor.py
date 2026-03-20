@@ -8,6 +8,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from ..utils.llm_client import LLMClient
+from ..utils.ontology import normalize_ontology
 
 
 class LocalGraphExtractor:
@@ -125,6 +126,7 @@ class LocalGraphExtractor:
         ontology: Dict[str, Any],
         known_entities: Optional[List[Dict[str, str]]] = None,
     ) -> Dict[str, Any]:
+        ontology = normalize_ontology(ontology)
         entity_defs = ontology.get("entity_types", [])
         edge_defs = ontology.get("edge_types", [])
 
@@ -166,6 +168,10 @@ class LocalGraphExtractor:
   "summary": "..."
 }
 6. 추출할 내용이 없으면 빈 배열을 반환하고, 만들어내지 않는다
+7. 관계 유형이 애매하면 ontology 안에서 가장 가까운 관계 유형 하나로 매핑한다. 관계를 새로 만들지 말고 가장 가까운 기존 관계를 사용한다
+8. 엔티티 유형이 애매하면 ontology 안에서 가장 가까운 엔티티 유형으로 매핑한다. 특히 구체 유형이 불명확하면 Person 또는 Organization을 우선 사용한다
+9. known entities에 이미 있는 이름이 보이면 그 엔티티를 재사용하고, 관계도 그 이름을 기준으로 연결한다
+10. 텍스트에 명시적인 소속, 보도, 대응, 지지, 반대, 협력 관계가 있으면 relationships를 비우지 말고 최소 1개 이상 추출한다
 """
 
         user_prompt = f"""## Ontology

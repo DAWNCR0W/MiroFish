@@ -14,15 +14,70 @@ from ..utils.logger import get_logger
 
 logger = get_logger('mirofish.llm_client')
 
-# LM Studio 같은 일부 OpenAI 호환 서비스는 json_object를 지원하지 않으므로,
-# 일반 텍스트 모드로 되돌리고 프롬프트로 JSON 출력을 제약해야 한다.
+# 일부 OpenAI 호환 서비스는 json_object를 그대로 받지 못한다.
+# LM Studio는 json_schema로 우회하고, 그마저 안 되면 text 모드로 되돌린다.
 JSON_ONLY_RESPONSE_INSTRUCTION = (
     "중요: 유효한 JSON만 반환하고, Markdown 코드 블록, 설명 또는 기타 추가 텍스트는 출력하지 마세요."
 )
 
 
-def _build_token_budgets(max_tokens: int) -> List[int]:
+def _get_client_base_url(client: OpenAI) -> str:
+    """OpenAI 클라이언트에서 base_url 문자열을 안전하게 꺼낸다"""
+    base_url = getattr(client, "base_url", None) or getattr(client, "_base_url", None)
+    return str(base_url or "")
+
+
+def _is_lm_studio_client(client: OpenAI) -> bool:
+    """LM Studio OpenAI 호환 서버를 사용하는지 추정한다"""
+    base_url = _get_client_base_url(client).lower()
+    if not base_url:
+        return False
+
+    lm_studio_markers = (
+        "lmstudio",
+        "localhost:1234",
+        "127.0.0.1:1234",
+        "0.0.0.0:1234",
+    )
+    return any(marker in base_url for marker in lm_studio_markers)
+
+
+def _build_json_schema_response_format(name: str = "structured_response") -> Dict[str, Any]:
+    """json_object 호환용 느슨한 json_schema 요청을 구성한다"""
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": name,
+            "schema": {
+                "type": "object",
+                "additionalProperties": True,
+            },
+        },
+    }
+
+
+def _normalize_response_format_for_provider(
+    client: OpenAI,
+    response_format: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """provider 특성에 맞게 response_format을 보정한다"""
+    if not response_format:
+        return response_format
+
+    if (
+        response_format.get("type") == "json_object"
+        and _is_lm_studio_client(client)
+    ):
+        return _build_json_schema_response_format()
+
+    return response_format
+
+
+def _build_token_budgets(max_tokens: Optional[int]) -> List[Optional[int]]:
     """think/reasoning 모델을 위한 단계적 출력 예산을 구성한다"""
+    if max_tokens is None:
+        return [None]
+
     budgets: List[int] = []
     for candidate in (
         max_tokens,
@@ -32,6 +87,22 @@ def _build_token_budgets(max_tokens: int) -> List[int]:
         if candidate not in budgets:
             budgets.append(candidate)
     return budgets
+
+
+def _log_retry_with_optional_budget(
+    message_with_budget: str,
+    message_without_budget: str,
+    *,
+    token_budget: Optional[int],
+    next_budget: Optional[int],
+    **kwargs: Any,
+) -> None:
+    """명시적 토큰 예산이 있을 때만 budget 정보를 포함해 재시도 로그를 남긴다"""
+    if token_budget is not None and next_budget is not None:
+        logger.warning(message_with_budget, *kwargs.values(), token_budget, next_budget)
+        return
+
+    logger.warning(message_without_budget, *kwargs.values())
 
 
 def _should_retry_without_response_format(
@@ -78,6 +149,15 @@ def _ensure_json_only_messages(messages: List[Dict[str, Any]]) -> List[Dict[str,
     return normalized_messages
 
 
+def extract_structured_response_text(message: Any) -> str:
+    """구조화 응답 본문을 content 우선, reasoning_content 차선으로 추출한다"""
+    content = _clean_response_text(getattr(message, "content", None))
+    if content:
+        return content
+
+    return _clean_response_text(getattr(message, "reasoning_content", None))
+
+
 def create_chat_completion_with_fallback(
     client: OpenAI,
     *,
@@ -85,15 +165,24 @@ def create_chat_completion_with_fallback(
     **kwargs
 ):
     """
-    chat completion을 생성하고, provider가 json_object를 지원하지 않으면 자동으로 다운그레이드한다.
+    chat completion을 생성하고, provider 특성에 맞춰 구조화 응답 요청을 보정한다.
     """
+    requested_response_format = kwargs.get("response_format")
+    request_kwargs = dict(kwargs)
+    normalized_response_format = _normalize_response_format_for_provider(
+        client,
+        requested_response_format,
+    )
+    if normalized_response_format:
+        request_kwargs["response_format"] = normalized_response_format
+
     try:
-        return client.chat.completions.create(**kwargs)
+        return client.chat.completions.create(**request_kwargs)
     except Exception as exc:
-        if not _should_retry_without_response_format(kwargs.get("response_format"), exc):
+        if not _should_retry_without_response_format(requested_response_format, exc):
             raise
 
-        fallback_kwargs = dict(kwargs)
+        fallback_kwargs = dict(request_kwargs)
         fallback_kwargs.pop("response_format", None)
         fallback_kwargs["messages"] = _ensure_json_only_messages(
             fallback_kwargs.get("messages", [])
@@ -156,8 +245,8 @@ class LLMClient:
     def chat(
         self,
         messages: List[Dict[str, str]],
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
         response_format: Optional[Dict] = None
     ) -> str:
         """
@@ -165,8 +254,8 @@ class LLMClient:
 
         Args:
             messages: 메시지 목록
-            temperature: 온도 파라미터
-            max_tokens: 최대 token 수
+            temperature: 온도 파라미터(None이면 provider 기본값 사용)
+            max_tokens: 최대 token 수(None이면 provider 기본값 사용)
             response_format: 응답 형식 (예: JSON 모드)
 
         Returns:
@@ -179,10 +268,12 @@ class LLMClient:
             kwargs = {
                 "model": self.model,
                 "messages": messages,
-                "temperature": temperature,
-                "max_tokens": token_budget,
             }
 
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+            if token_budget is not None:
+                kwargs["max_tokens"] = token_budget
             if response_format:
                 kwargs["response_format"] = response_format
 
@@ -194,15 +285,19 @@ class LLMClient:
             choice = response.choices[0]
             message = choice.message
             finish_reason = choice.finish_reason
-            content = _clean_response_text(message.content)
+            content = (
+                extract_structured_response_text(message)
+                if response_format else _clean_response_text(message.content)
+            )
             has_reasoning = bool(getattr(message, "reasoning_content", None))
 
             if finish_reason == "length" and index < len(token_budgets) - 1:
                 next_budget = token_budgets[index + 1]
-                logger.warning(
-                    "LLM 텍스트 출력이 max_tokens=%s에서 잘려서 %s로 상향해 재시도",
-                    token_budget,
-                    next_budget,
+                _log_retry_with_optional_budget(
+                    "LLM 텍스트 출력이 잘려 max_tokens=%s에서 %s로 상향해 재시도",
+                    "LLM 텍스트 출력이 잘려 재시도",
+                    token_budget=token_budget,
+                    next_budget=next_budget,
                 )
                 continue
 
@@ -218,10 +313,12 @@ class LLMClient:
                 and index < len(token_budgets) - 1
             ):
                 next_budget = token_budgets[index + 1]
-                logger.warning(
-                    "LLM 텍스트 출력이 비어 있음 (finish_reason=%s), %s로 상향해 재시도",
-                    finish_reason,
-                    next_budget,
+                _log_retry_with_optional_budget(
+                    "LLM 텍스트 출력이 비어 있음 (finish_reason=%s). max_tokens=%s에서 %s로 상향해 재시도",
+                    "LLM 텍스트 출력이 비어 있음 (finish_reason=%s). 재시도",
+                    token_budget=token_budget,
+                    next_budget=next_budget,
+                    finish_reason=finish_reason,
                 )
                 continue
 
@@ -232,16 +329,16 @@ class LLMClient:
     def chat_json(
         self,
         messages: List[Dict[str, str]],
-        temperature: float = 0.3,
-        max_tokens: int = 4096
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         채팅 요청을 보내고 JSON을 반환한다.
 
         Args:
             messages: 메시지 목록
-            temperature: 온도 파라미터
-            max_tokens: 최대 token 수
+            temperature: 온도 파라미터(None이면 provider 기본값 사용)
+            max_tokens: 최대 token 수(None이면 provider 기본값 사용)
 
         Returns:
             파싱된 JSON 객체
@@ -250,19 +347,25 @@ class LLMClient:
         last_error = None
 
         for index, token_budget in enumerate(token_budgets):
+            request_kwargs = {
+                "model": self.model,
+                "messages": messages,
+                "response_format": {"type": "json_object"},
+            }
+            if temperature is not None:
+                request_kwargs["temperature"] = temperature
+            if token_budget is not None:
+                request_kwargs["max_tokens"] = token_budget
+
             response = create_chat_completion_with_fallback(
                 self.client,
                 request_logger=logger,
-                model=self.model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=token_budget,
-                response_format={"type": "json_object"}
+                **request_kwargs
             )
             choice = response.choices[0]
             message = choice.message
             finish_reason = choice.finish_reason
-            content = message.content
+            content = extract_structured_response_text(message)
 
             try:
                 return _parse_json_from_content(content)
@@ -276,10 +379,11 @@ class LLMClient:
                     and index < len(token_budgets) - 1
                 ):
                     next_budget = token_budgets[index + 1]
-                    logger.warning(
-                        "LLM JSON 출력이 max_tokens=%s에서 잘려서 %s로 상향해 재시도",
-                        token_budget,
-                        next_budget,
+                    _log_retry_with_optional_budget(
+                        "LLM JSON 출력이 잘려 max_tokens=%s에서 %s로 상향해 재시도",
+                        "LLM JSON 출력이 잘려 재시도",
+                        token_budget=token_budget,
+                        next_budget=next_budget,
                     )
                     continue
 
@@ -289,9 +393,11 @@ class LLMClient:
                     and index < len(token_budgets) - 1
                 ):
                     next_budget = token_budgets[index + 1]
-                    logger.warning(
-                        "LLM이 생각 내용만 반환하고 최종 JSON을 출력하지 않아 %s로 상향해 재시도",
-                        next_budget,
+                    _log_retry_with_optional_budget(
+                        "LLM이 생각 내용만 반환하고 최종 JSON을 출력하지 않아 max_tokens=%s에서 %s로 상향해 재시도",
+                        "LLM이 생각 내용만 반환하고 최종 JSON을 출력하지 않아 재시도",
+                        token_budget=token_budget,
+                        next_budget=next_budget,
                     )
                     continue
 

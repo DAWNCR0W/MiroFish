@@ -12,6 +12,7 @@ from typing import Dict, Any, List, Optional
 from enum import Enum
 from dataclasses import dataclass, field, asdict
 from ..config import Config
+from ..utils.ontology import normalize_ontology
 
 
 class ProjectStatus(str, Enum):
@@ -54,6 +55,7 @@ class Project:
     
     def to_dict(self) -> Dict[str, Any]:
         """딕셔너리로 변환한다"""
+        ontology = normalize_ontology(self.ontology) if self.ontology is not None else None
         return {
             "project_id": self.project_id,
             "name": self.name,
@@ -62,7 +64,7 @@ class Project:
             "updated_at": self.updated_at,
             "files": self.files,
             "total_text_length": self.total_text_length,
-            "ontology": self.ontology,
+            "ontology": ontology,
             "analysis_summary": self.analysis_summary,
             "graph_id": self.graph_id,
             "graph_build_task_id": self.graph_build_task_id,
@@ -78,6 +80,8 @@ class Project:
         status = data.get('status', 'created')
         if isinstance(status, str):
             status = ProjectStatus(status)
+
+        raw_ontology = data.get('ontology')
         
         return cls(
             project_id=data['project_id'],
@@ -87,7 +91,7 @@ class Project:
             updated_at=data.get('updated_at', ''),
             files=data.get('files', []),
             total_text_length=data.get('total_text_length', 0),
-            ontology=data.get('ontology'),
+            ontology=normalize_ontology(raw_ontology) if raw_ontology is not None else None,
             analysis_summary=data.get('analysis_summary'),
             graph_id=data.get('graph_id'),
             graph_build_task_id=data.get('graph_build_task_id'),
@@ -168,6 +172,8 @@ class ProjectManager:
     def save_project(cls, project: Project) -> None:
         """프로젝트 메타데이터를 저장한다"""
         project.updated_at = datetime.now().isoformat()
+        if project.ontology is not None:
+            project.ontology = normalize_ontology(project.ontology)
         meta_path = cls._get_project_meta_path(project.project_id)
         
         with open(meta_path, 'w', encoding='utf-8') as f:

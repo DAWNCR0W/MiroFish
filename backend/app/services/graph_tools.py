@@ -614,8 +614,7 @@ class GraphToolsService:
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.3,
+                ]
             )
             sub_queries = response.get("sub_queries", [])
             return [str(item) for item in sub_queries[:max_queries]]
@@ -831,8 +830,7 @@ class GraphToolsService:
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.3,
+                ]
             )
             selected_indices = [index for index in response.get("selected_indices", []) if 0 <= index < len(profiles)]
             selected_indices = selected_indices[:max_agents]
@@ -858,8 +856,7 @@ class GraphToolsService:
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.5,
+                ]
             )
             questions = response.get("questions", [])
             return questions or [f"{interview_requirement}에 대해 어떻게 생각하십니까?"]
@@ -880,9 +877,7 @@ class GraphToolsService:
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.3,
-                max_tokens=2048,
+                ]
             )
             if not summary or not summary.strip():
                 raise ValueError("LLM이 빈 요약을 반환했습니다")

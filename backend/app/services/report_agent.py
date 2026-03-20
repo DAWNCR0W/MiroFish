@@ -465,6 +465,13 @@ class Report:
             "error": self.error
         }
 
+    def has_outline_sections(self) -> bool:
+        """렌더링 가능한 장 구조가 있는지 확인합니다."""
+        return bool(
+            self.outline
+            and any((section.title or "").strip() for section in self.outline.sections)
+        )
+
 
 # ═══════════════════════════════════════════════════════════════
 # 프롬프트 템플릿 상수
@@ -599,6 +606,9 @@ PLAN_USER_PROMPT_TEMPLATE = """\
 
 【시뮬레이션이 예측한 일부 미래 사실 샘플】
 {related_facts_json}
+
+【시뮬레이션 세계 주요 엔티티 요약】
+{entity_summaries_json}
 
 이 미래 예행연습을 「전지적 시점」으로 검토하세요:
 1. 우리가 설정한 조건에서 미래는 어떤 상태를 보였습니까?
@@ -1132,6 +1142,58 @@ class ReportAgent:
             if params_desc:
                 desc_parts.append(f"  파라미터: {params_desc}")
         return "\n".join(desc_parts)
+
+    def _build_outline_summary(self, context: Optional[Dict[str, Any]] = None) -> str:
+        """보고서 개요 요약의 기본 문구를 생성합니다."""
+        context = context or {}
+        graph_stats = context.get("graph_statistics", {}) or {}
+        total_entities = context.get("total_entities", 0) or graph_stats.get("total_nodes", 0)
+        total_edges = graph_stats.get("total_edges", 0)
+
+        if total_entities:
+            return (
+                f"{total_entities}개 시뮬레이션 개체"
+                f"{f'와 {total_edges}개 관계' if total_edges else ''}를 바탕으로 "
+                "미래 반응, 집단 행동, 잠재 위험을 정리한 보고서"
+            )
+
+        return "시뮬레이션 예측을 바탕으로 한 미래 추세와 위험 분석"
+
+    def _build_fallback_outline(self, context: Optional[Dict[str, Any]] = None) -> ReportOutline:
+        """LLM 응답이 불안정할 때 사용할 기본 보고서 개요를 반환합니다."""
+        return ReportOutline(
+            title="시뮬레이션 분석 보고서",
+            summary=self._build_outline_summary(context),
+            sections=[
+                ReportSection(title="예측 시나리오와 핵심 전개"),
+                ReportSection(title="집단 반응과 여론 분화"),
+                ReportSection(title="향후 추세와 위험 신호"),
+            ],
+        )
+
+    def _normalize_outline_sections(self, raw_sections: Any) -> List[ReportSection]:
+        """LLM이 반환한 장 목록을 정리하고 빈 제목을 제거합니다."""
+        if not isinstance(raw_sections, list):
+            return []
+
+        normalized_sections = []
+        seen_titles = set()
+
+        for section_data in raw_sections:
+            if not isinstance(section_data, dict):
+                continue
+
+            title = (section_data.get("title") or "").strip()
+            if not title or title in seen_titles:
+                continue
+
+            normalized_sections.append(ReportSection(title=title, content=""))
+            seen_titles.add(title)
+
+            if len(normalized_sections) >= 5:
+                break
+
+        return normalized_sections
     
     def plan_outline(
         self, 
@@ -1170,6 +1232,7 @@ class ReportAgent:
             entity_types=list(context.get('graph_statistics', {}).get('entity_types', {}).keys()),
             total_entities=context.get('total_entities', 0),
             related_facts_json=json.dumps(context.get('related_facts', [])[:10], ensure_ascii=False, indent=2),
+            entity_summaries_json=json.dumps(context.get('entities', [])[:10], ensure_ascii=False, indent=2),
         )
 
         try:
@@ -1177,24 +1240,23 @@ class ReportAgent:
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.3
+                ]
             )
             
             if progress_callback:
                 progress_callback("planning", 80, "대요약 구조를 파싱하는 중입니다...")
             
             # 대요약을 파싱합니다
-            sections = []
-            for section_data in response.get("sections", []):
-                sections.append(ReportSection(
-                    title=section_data.get("title", ""),
-                    content=""
-                ))
+            sections = self._normalize_outline_sections(response.get("sections", []))
+
+            if len(sections) < 2:
+                raise ValueError(
+                    f"LLM이 유효한 보고서 장 구조를 반환하지 않았습니다: sections={len(sections)}"
+                )
             
             outline = ReportOutline(
-                title=response.get("title", "시뮬레이션 분석 보고서"),
-                summary=response.get("summary", ""),
+                title=(response.get("title") or "").strip() or "시뮬레이션 분석 보고서",
+                summary=(response.get("summary") or "").strip() or self._build_outline_summary(context),
                 sections=sections
             )
             
@@ -1206,16 +1268,7 @@ class ReportAgent:
             
         except Exception as e:
             logger.error(f"대요약 기획에 실패했습니다: {str(e)}")
-            # 기본 대요약을 반환합니다(3개 장, fallback)
-            return ReportOutline(
-                title="미래 예측 보고서",
-                summary="시뮬레이션 예측을 바탕으로 한 미래 추세와 위험 분석",
-                sections=[
-                    ReportSection(title="예측 시나리오와 핵심 발견"),
-                    ReportSection(title="집단 행동 예측 분석"),
-                    ReportSection(title="추세 전망과 위험 알림")
-                ]
-            )
+            return self._build_fallback_outline(context)
     
     def _generate_section_react(
         self, 
@@ -1301,9 +1354,7 @@ class ReportAgent:
             
             # LLM을 호출합니다
             response = self.llm.chat(
-                messages=messages,
-                temperature=0.5,
-                max_tokens=8192
+                messages=messages
             )
 
             # LLM 반환이 비어 있는지 확인합니다(API 이상 또는 think 모델이 최종 내용을 출력하지 못한 경우)
@@ -1504,9 +1555,7 @@ class ReportAgent:
         messages.append({"role": "user", "content": REACT_FORCE_FINAL_MSG})
         
         response = self.llm.chat(
-            messages=messages,
-            temperature=0.5,
-            max_tokens=8192
+            messages=messages
         )
 
         # 강제 마무리 시 LLM 반환이 비어 있는지 확인합니다
@@ -1612,6 +1661,10 @@ class ReportAgent:
                 progress_callback=lambda stage, prog, msg: 
                     progress_callback(stage, prog // 5, msg) if progress_callback else None
             )
+
+            if not outline.sections:
+                raise ValueError("유효한 보고서 개요를 생성하지 못했습니다")
+
             report.outline = outline
             
             # 기획 완료 로그를 기록합니다
@@ -1825,8 +1878,7 @@ class ReportAgent:
         
         for iteration in range(max_iterations):
             response = self.llm.chat(
-                messages=messages,
-                temperature=0.5
+                messages=messages
             )
             if not response or not response.strip():
                 messages.append({"role": "assistant", "content": "（응답이 비어 있습니다）"})
@@ -1872,8 +1924,7 @@ class ReportAgent:
         
         # 최대 반복에 도달하면 최종 응답을 가져옵니다
         final_response = self.llm.chat(
-            messages=messages,
-            temperature=0.5
+            messages=messages
         )
         if not final_response or not final_response.strip():
             final_response = "（보고서 Agent가 아직 내용을 반환하지 않았습니다. 잠시 후 다시 시도하세요）"
@@ -1961,6 +2012,45 @@ class ReportManager:
     def _get_console_log_path(cls, report_id: str) -> str:
         """콘솔 로그 파일 경로를 가져옵니다."""
         return os.path.join(cls._get_report_folder(report_id), "console_log.txt")
+
+    @staticmethod
+    def _has_meaningful_markdown(content: str) -> bool:
+        """제목/구분선만 있는 placeholder가 아닌지 확인합니다."""
+        if not content:
+            return False
+
+        normalized_lines = []
+        for raw_line in content.splitlines():
+            line = raw_line.strip()
+            if not line or line in {"---", "***", "___"}:
+                continue
+
+            cleaned = re.sub(r'^[#>\-\*\d\.\s`]+', '', line).strip()
+            if cleaned:
+                normalized_lines.append(cleaned)
+
+        if not normalized_lines:
+            return False
+
+        if len(normalized_lines) == 1 and normalized_lines[0] == "시뮬레이션 분석 보고서":
+            return False
+
+        return len(" ".join(normalized_lines)) >= 20 or len(normalized_lines) >= 2
+
+    @classmethod
+    def is_report_renderable(cls, report: Optional[Report]) -> bool:
+        """보고서를 사용자 화면에 보여줄 수 있는 수준인지 판단합니다."""
+        if not report:
+            return False
+
+        if report.has_outline_sections():
+            return True
+
+        if cls._has_meaningful_markdown(report.markdown_content):
+            return True
+
+        sections = cls.get_generated_sections(report.report_id)
+        return any(cls._has_meaningful_markdown(section.get("content", "")) for section in sections)
     
     @classmethod
     def get_console_log(cls, report_id: str, from_line: int = 0) -> Dict[str, Any]:
@@ -2508,22 +2598,36 @@ class ReportManager:
     def get_report_by_simulation(cls, simulation_id: str) -> Optional[Report]:
         """시뮬레이션 ID로 보고서를 가져옵니다."""
         cls._ensure_reports_dir()
-        
+
+        matching_reports: List[Report] = []
+
         for item in os.listdir(cls.REPORTS_DIR):
             item_path = os.path.join(cls.REPORTS_DIR, item)
             # 새 형식: 폴더
             if os.path.isdir(item_path):
                 report = cls.get_report(item)
                 if report and report.simulation_id == simulation_id:
-                    return report
+                    matching_reports.append(report)
             # 이전 형식 호환: JSON 파일
             elif item.endswith('.json'):
                 report_id = item[:-5]
                 report = cls.get_report(report_id)
                 if report and report.simulation_id == simulation_id:
-                    return report
-        
-        return None
+                    matching_reports.append(report)
+
+        if not matching_reports:
+            return None
+
+        matching_reports.sort(
+            key=lambda report: (
+                1 if report.status == ReportStatus.COMPLETED and cls.is_report_renderable(report) else 0,
+                1 if cls.is_report_renderable(report) else 0,
+                1 if report.status == ReportStatus.COMPLETED else 0,
+                report.completed_at or report.created_at or "",
+            ),
+            reverse=True,
+        )
+        return matching_reports[0]
     
     @classmethod
     def list_reports(cls, simulation_id: Optional[str] = None, limit: int = 50) -> List[Report]:

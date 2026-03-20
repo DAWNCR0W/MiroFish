@@ -19,7 +19,10 @@ from openai import OpenAI
 
 from ..config import Config
 from ..utils.logger import get_logger
-from ..utils.llm_client import create_chat_completion_with_fallback
+from ..utils.llm_client import (
+    create_chat_completion_with_fallback,
+    extract_structured_response_text,
+)
 from .graph_entity_reader import EntityNode
 from .graph_tools import GraphToolsService
 
@@ -478,10 +481,10 @@ class OasisProfileGenerator:
             )
 
         # 성공하거나 최대 재시도 횟수에 도달할 때까지 여러 번 시도
-        token_budgets = (4096, 8192, 16384)
+        max_attempts = 3
         last_error = None
 
-        for attempt, token_budget in enumerate(token_budgets):
+        for attempt in range(max_attempts):
             try:
                 response = create_chat_completion_with_fallback(
                     self.client,
@@ -492,19 +495,16 @@ class OasisProfileGenerator:
                         {"role": "user", "content": prompt}
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1),  # 재시도할수록 온도 낮춤
-                    max_tokens=token_budget,
                 )
 
                 message = response.choices[0].message
-                content = message.content or ""
+                content = extract_structured_response_text(message)
                 has_reasoning = bool(getattr(message, "reasoning_content", None))
                 if not content.strip() and has_reasoning:
                     last_error = ValueError("LLM이 사고 내용만 반환하고 최종 JSON을 출력하지 않았습니다")
                     logger.warning(
-                        "LLM이 사고 내용만 반환함 (attempt %s, max_tokens=%s)",
+                        "LLM이 사고 내용만 반환함 (attempt %s, provider 기본 생성 설정 사용)",
                         attempt + 1,
-                        token_budget,
                     )
                     continue
 
@@ -512,9 +512,8 @@ class OasisProfileGenerator:
                 finish_reason = response.choices[0].finish_reason
                 if finish_reason == 'length':
                     logger.warning(
-                        "LLM 출력이 잘림 (attempt %s, max_tokens=%s), 복구를 시도합니다...",
+                        "LLM 출력이 잘림 (attempt %s, provider 기본 생성 설정 사용), 복구를 시도합니다...",
                         attempt + 1,
-                        token_budget,
                     )
                     content = self._fix_truncated_json(content)
 

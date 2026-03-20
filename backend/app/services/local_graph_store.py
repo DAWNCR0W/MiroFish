@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from ..config import Config
+from ..utils.ontology import normalize_ontology
 
 
 class LocalGraphStore:
@@ -98,12 +99,12 @@ class LocalGraphStore:
     def save_ontology(self, graph_id: str, ontology: Dict[str, Any]) -> None:
         with self._lock_for(graph_id):
             graph = self._read_graph(graph_id)
-            graph["ontology"] = ontology
+            graph["ontology"] = normalize_ontology(ontology)
             self._write_graph(graph_id, graph)
 
     def get_ontology(self, graph_id: str) -> Dict[str, Any]:
         graph = self.get_graph(graph_id)
-        return graph.get("ontology") or {}
+        return normalize_ontology(graph.get("ontology"))
 
     def add_episode(
         self,

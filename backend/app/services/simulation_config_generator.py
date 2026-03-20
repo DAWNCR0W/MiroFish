@@ -20,7 +20,10 @@ from openai import OpenAI
 
 from ..config import Config
 from ..utils.logger import get_logger
-from ..utils.llm_client import create_chat_completion_with_fallback
+from ..utils.llm_client import (
+    create_chat_completion_with_fallback,
+    extract_structured_response_text,
+)
 from .graph_entity_reader import EntityNode
 
 logger = get_logger('mirofish.simulation_config')
@@ -437,10 +440,10 @@ class SimulationConfigGenerator:
         """재시도 포함 LLM 호출, JSON 복구 로직을 포함합니다."""
         import re
 
-        token_budgets = (4096, 8192, 16384)
+        max_attempts = 3
         last_error = None
 
-        for attempt, token_budget in enumerate(token_budgets):
+        for attempt in range(max_attempts):
             try:
                 response = create_chat_completion_with_fallback(
                     self.client,
@@ -451,30 +454,26 @@ class SimulationConfigGenerator:
                         {"role": "user", "content": prompt}
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1),  # 재시도할수록 온도를 낮춤
-                    max_tokens=token_budget,
                 )
 
                 message = response.choices[0].message
-                content = message.content or ""
+                content = extract_structured_response_text(message)
                 finish_reason = response.choices[0].finish_reason
                 has_reasoning = bool(getattr(message, "reasoning_content", None))
 
                 if not content.strip() and has_reasoning:
                     last_error = ValueError("LLM이 사고 내용만 반환하고 최종 JSON을 출력하지 않았습니다")
                     logger.warning(
-                        "LLM이 사고 내용만 반환함 (시도 %s, 최대 토큰=%s)",
+                        "LLM이 사고 내용만 반환함 (시도 %s, provider 기본 생성 설정 사용)",
                         attempt + 1,
-                        token_budget,
                     )
                     continue
 
                 # 잘렸는지 확인합니다
                 if finish_reason == 'length':
                     logger.warning(
-                        "LLM 출력이 잘림 (시도 %s, 최대 토큰=%s)",
+                        "LLM 출력이 잘림 (시도 %s, provider 기본 생성 설정 사용)",
                         attempt + 1,
-                        token_budget,
                     )
                     content = self._fix_truncated_json(content)
 
@@ -483,9 +482,8 @@ class SimulationConfigGenerator:
                     return json.loads(content)
                 except json.JSONDecodeError as e:
                     logger.warning(
-                        "JSON 파싱 실패 (시도 %s, 최대 토큰=%s): %s",
+                        "JSON 파싱 실패 (시도 %s, provider 기본 생성 설정 사용): %s",
                         attempt + 1,
-                        token_budget,
                         str(e)[:80],
                     )
 
@@ -1008,4 +1006,3 @@ JSON 형식으로 반환하세요(마크다운 금지):
                 "stance": "neutral",
                 "influence_weight": 1.0
             }
-
