@@ -55,6 +55,126 @@ class LocalGraphStore:
         normalized = "".join(ch.lower() for ch in name.strip() if ch.isalnum())
         return normalized
 
+    @classmethod
+    def _normalize_aliases(cls, aliases: Any, primary_name: str = "") -> List[str]:
+        if not isinstance(aliases, list):
+            return []
+
+        normalized_primary = cls._normalize_name(primary_name)
+        deduped: List[str] = []
+        seen = set()
+
+        for alias in aliases:
+            if not isinstance(alias, str):
+                continue
+
+            cleaned = alias.strip()
+            normalized = cls._normalize_name(cleaned)
+            if not cleaned or not normalized or normalized == normalized_primary or normalized in seen:
+                continue
+
+            seen.add(normalized)
+            deduped.append(cleaned)
+
+        return deduped
+
+    @classmethod
+    def _node_name_keys(cls, node: Dict[str, Any]) -> set:
+        keys = set()
+        primary_name = cls._normalize_name(node.get("name", ""))
+        if primary_name:
+            keys.add(primary_name)
+
+        for alias in node.get("aliases", []) or []:
+            normalized = cls._normalize_name(alias)
+            if normalized:
+                keys.add(normalized)
+
+        return keys
+
+    @classmethod
+    def _incoming_name_keys(cls, name: str, aliases: Optional[List[str]] = None) -> set:
+        keys = set()
+        primary_name = cls._normalize_name(name)
+        if primary_name:
+            keys.add(primary_name)
+
+        for alias in cls._normalize_aliases(aliases or [], primary_name=name):
+            normalized = cls._normalize_name(alias)
+            if normalized:
+                keys.add(normalized)
+
+        return keys
+
+    @classmethod
+    def _merge_aliases(
+        cls,
+        existing_aliases: Any,
+        incoming_aliases: Any,
+        *,
+        primary_name: str,
+        incoming_name: str = "",
+    ) -> List[str]:
+        merged_input: List[str] = []
+
+        if isinstance(existing_aliases, list):
+            merged_input.extend(existing_aliases)
+        if incoming_name:
+            merged_input.append(incoming_name)
+        if isinstance(incoming_aliases, list):
+            merged_input.extend(incoming_aliases)
+
+        return cls._normalize_aliases(merged_input, primary_name=primary_name)
+
+    @staticmethod
+    def _merge_attributes(existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+        merged = dict(existing or {})
+        for key, value in (incoming or {}).items():
+            if value not in [None, "", [], {}]:
+                merged[key] = value
+        return merged
+
+    @staticmethod
+    def _merge_summary(existing_summary: str, incoming_summary: str) -> str:
+        existing_clean = (existing_summary or "").strip()
+        incoming_clean = (incoming_summary or "").strip()
+
+        if not incoming_clean:
+            return existing_clean
+        if not existing_clean:
+            return incoming_clean
+        if incoming_clean in existing_clean:
+            return existing_clean
+        if existing_clean in incoming_clean:
+            return incoming_clean
+
+        return incoming_clean if len(incoming_clean) > len(existing_clean) else existing_clean
+
+    @staticmethod
+    def _merge_unique_list(existing: Any, incoming: Any) -> List[Any]:
+        merged: List[Any] = []
+        seen = set()
+
+        for collection in (existing or [], incoming or []):
+            for item in collection if isinstance(collection, list) else [collection]:
+                if item in seen:
+                    continue
+                seen.add(item)
+                merged.append(item)
+
+        return merged
+
+    @staticmethod
+    def _min_timestamp(*timestamps: Optional[str]) -> Optional[str]:
+        values = [value for value in timestamps if value]
+        return min(values) if values else None
+
+    @staticmethod
+    def _merge_end_timestamp(existing: Optional[str], incoming: Optional[str]) -> Optional[str]:
+        if not existing or not incoming:
+            return None
+        return min(existing, incoming)
+
     @staticmethod
     def _custom_labels(labels: List[str]) -> List[str]:
         return [label for label in labels if label not in ["Entity", "Node"]]
@@ -158,14 +278,14 @@ class LocalGraphStore:
         name: str,
         entity_type: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        normalized_name = self._normalize_name(name)
-        if not normalized_name:
+        incoming_keys = self._incoming_name_keys(name)
+        if not incoming_keys:
             return None
 
         graph = self.get_graph(graph_id)
         candidates = []
         for node in graph.get("nodes", []):
-            if self._normalize_name(node.get("name", "")) == normalized_name:
+            if incoming_keys & self._node_name_keys(node):
                 candidates.append(node)
 
         if not candidates:
@@ -197,14 +317,18 @@ class LocalGraphStore:
             added_nodes = 0
             added_edges = 0
 
-            def find_existing_node(name: str, entity_type: Optional[str]) -> Optional[Dict[str, Any]]:
-                normalized_name = self._normalize_name(name)
-                if not normalized_name:
+            def find_existing_node(
+                name: str,
+                entity_type: Optional[str],
+                aliases: Optional[List[str]] = None,
+            ) -> Optional[Dict[str, Any]]:
+                incoming_keys = self._incoming_name_keys(name, aliases)
+                if not incoming_keys:
                     return None
 
                 same_name = [
                     node for node in nodes
-                    if self._normalize_name(node.get("name", "")) == normalized_name
+                    if incoming_keys & self._node_name_keys(node)
                 ]
                 if not same_name:
                     return None
@@ -214,13 +338,6 @@ class LocalGraphStore:
                         if entity_type in self._custom_labels(node.get("labels", [])):
                             return node
                 return same_name[0]
-
-            def merge_attributes(existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
-                merged = dict(existing or {})
-                for key, value in (incoming or {}).items():
-                    if value not in [None, "", [], {}]:
-                        merged[key] = value
-                return merged
 
             def upsert_node(entity: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 nonlocal added_nodes
@@ -238,7 +355,9 @@ class LocalGraphStore:
                 if entity_type:
                     labels.append(entity_type)
 
-                existing = find_existing_node(name, entity_type)
+                aliases = self._normalize_aliases(entity.get("aliases") or [], primary_name=name)
+
+                existing = find_existing_node(name, entity_type, aliases)
                 if existing:
                     existing_labels = existing.get("labels", [])
                     for label in labels:
@@ -248,25 +367,30 @@ class LocalGraphStore:
 
                     incoming_summary = (entity.get("summary") or "").strip()
                     existing_summary = (existing.get("summary") or "").strip()
-                    if incoming_summary and incoming_summary not in existing_summary:
-                        if not existing_summary:
-                            existing["summary"] = incoming_summary
-                        elif len(incoming_summary) > len(existing_summary):
-                            existing["summary"] = incoming_summary
+                    existing["summary"] = self._merge_summary(existing_summary, incoming_summary)
 
-                    existing["attributes"] = merge_attributes(
+                    existing["attributes"] = self._merge_attributes(
                         existing.get("attributes") or {},
                         entity.get("attributes") or {},
+                    )
+                    existing["aliases"] = self._merge_aliases(
+                        existing.get("aliases") or [],
+                        aliases,
+                        primary_name=existing.get("name", ""),
+                        incoming_name=name,
                     )
                     existing.setdefault("episodes", [])
                     if episode_id not in existing["episodes"]:
                         existing["episodes"].append(episode_id)
-                    upserted_nodes[cache_key] = existing
+                    cache_keys = self._incoming_name_keys(name, aliases)
+                    for alias_key in cache_keys:
+                        upserted_nodes[f"{alias_key}::{entity_type.lower()}"] = existing
                     return existing
 
                 node = {
                     "uuid": f"node_{uuid.uuid4().hex[:16]}",
                     "name": name,
+                    "aliases": aliases,
                     "labels": labels,
                     "summary": (entity.get("summary") or "").strip(),
                     "attributes": entity.get("attributes") or {},
@@ -275,7 +399,9 @@ class LocalGraphStore:
                 }
                 nodes.append(node)
                 added_nodes += 1
-                upserted_nodes[cache_key] = node
+                cache_keys = self._incoming_name_keys(name, aliases)
+                for alias_key in cache_keys:
+                    upserted_nodes[f"{alias_key}::{entity_type.lower()}"] = node
                 return node
 
             for entity in extraction.get("entities", []):
@@ -314,7 +440,7 @@ class LocalGraphStore:
                     duplicate.setdefault("episodes", [])
                     if episode_id not in duplicate["episodes"]:
                         duplicate["episodes"].append(episode_id)
-                    duplicate["attributes"] = merge_attributes(
+                    duplicate["attributes"] = self._merge_attributes(
                         duplicate.get("attributes") or {},
                         relation.get("attributes") or {},
                     )
@@ -350,6 +476,151 @@ class LocalGraphStore:
         return {
             "added_nodes": added_nodes,
             "added_edges": added_edges,
+        }
+
+    def merge_nodes(
+        self,
+        graph_id: str,
+        primary_node_uuid: str,
+        duplicate_node_uuids: List[str],
+    ) -> Dict[str, Any]:
+        duplicates_to_merge = [
+            node_uuid for node_uuid in duplicate_node_uuids
+            if node_uuid and node_uuid != primary_node_uuid
+        ]
+        if not duplicates_to_merge:
+            return {
+                "primary_node_uuid": primary_node_uuid,
+                "merged_node_uuids": [],
+                "merged_count": 0,
+                "removed_edges": 0,
+            }
+
+        with self._lock_for(graph_id):
+            graph = self._read_graph(graph_id)
+            nodes = graph.setdefault("nodes", [])
+            edges = graph.setdefault("edges", [])
+            node_map = {
+                node.get("uuid"): node
+                for node in nodes
+                if node.get("uuid")
+            }
+
+            primary = node_map.get(primary_node_uuid)
+            if not primary:
+                raise ValueError(f"기준 노드를 찾을 수 없음: {primary_node_uuid}")
+
+            primary.setdefault(
+                "aliases",
+                self._normalize_aliases(primary.get("aliases") or [], primary_name=primary.get("name", "")),
+            )
+            primary.setdefault("episodes", [])
+
+            merged_node_uuids: List[str] = []
+
+            for duplicate_uuid in duplicates_to_merge:
+                duplicate = node_map.get(duplicate_uuid)
+                if not duplicate:
+                    continue
+
+                for label in duplicate.get("labels", []) or []:
+                    if label not in primary.get("labels", []):
+                        primary.setdefault("labels", []).append(label)
+
+                primary["summary"] = self._merge_summary(
+                    primary.get("summary", ""),
+                    duplicate.get("summary", ""),
+                )
+                primary["attributes"] = self._merge_attributes(
+                    primary.get("attributes") or {},
+                    duplicate.get("attributes") or {},
+                )
+                primary["aliases"] = self._merge_aliases(
+                    primary.get("aliases") or [],
+                    duplicate.get("aliases") or [],
+                    primary_name=primary.get("name", ""),
+                    incoming_name=duplicate.get("name", ""),
+                )
+                primary["episodes"] = self._merge_unique_list(
+                    primary.get("episodes") or [],
+                    duplicate.get("episodes") or [],
+                )
+                primary["created_at"] = self._min_timestamp(
+                    primary.get("created_at"),
+                    duplicate.get("created_at"),
+                ) or primary.get("created_at")
+
+                for edge in edges:
+                    if edge.get("source_node_uuid") == duplicate_uuid:
+                        edge["source_node_uuid"] = primary_node_uuid
+                    if edge.get("target_node_uuid") == duplicate_uuid:
+                        edge["target_node_uuid"] = primary_node_uuid
+
+                merged_node_uuids.append(duplicate_uuid)
+
+            if not merged_node_uuids:
+                return {
+                    "primary_node_uuid": primary_node_uuid,
+                    "merged_node_uuids": [],
+                    "merged_count": 0,
+                    "removed_edges": 0,
+                }
+
+            graph["nodes"] = [
+                node for node in nodes
+                if node.get("uuid") not in set(merged_node_uuids)
+            ]
+
+            deduped_edges: List[Dict[str, Any]] = []
+            edge_index: Dict[tuple, Dict[str, Any]] = {}
+
+            for edge in edges:
+                edge_key = (
+                    edge.get("name", ""),
+                    edge.get("source_node_uuid", ""),
+                    edge.get("target_node_uuid", ""),
+                    edge.get("fact", ""),
+                )
+                existing = edge_index.get(edge_key)
+                if existing:
+                    existing["attributes"] = self._merge_attributes(
+                        existing.get("attributes") or {},
+                        edge.get("attributes") or {},
+                    )
+                    existing["episodes"] = self._merge_unique_list(
+                        existing.get("episodes") or [],
+                        edge.get("episodes") or [],
+                    )
+                    existing["created_at"] = self._min_timestamp(
+                        existing.get("created_at"),
+                        edge.get("created_at"),
+                    )
+                    existing["valid_at"] = self._min_timestamp(
+                        existing.get("valid_at"),
+                        edge.get("valid_at"),
+                    )
+                    existing["invalid_at"] = self._merge_end_timestamp(
+                        existing.get("invalid_at"),
+                        edge.get("invalid_at"),
+                    )
+                    existing["expired_at"] = self._merge_end_timestamp(
+                        existing.get("expired_at"),
+                        edge.get("expired_at"),
+                    )
+                    continue
+
+                edge_index[edge_key] = edge
+                deduped_edges.append(edge)
+
+            removed_edges = len(edges) - len(deduped_edges)
+            graph["edges"] = deduped_edges
+            self._write_graph(graph_id, graph)
+
+        return {
+            "primary_node_uuid": primary_node_uuid,
+            "merged_node_uuids": merged_node_uuids,
+            "merged_count": len(merged_node_uuids),
+            "removed_edges": removed_edges,
         }
 
     def mark_episode_processed(self, graph_id: str, episode_id: str) -> None:

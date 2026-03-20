@@ -49,6 +49,7 @@ class SearchResult:
 class NodeInfo:
     uuid: str
     name: str
+    aliases: List[str]
     labels: List[str]
     summary: str
     attributes: Dict[str, Any]
@@ -57,6 +58,7 @@ class NodeInfo:
         return {
             "uuid": self.uuid,
             "name": self.name,
+            "aliases": self.aliases,
             "labels": self.labels,
             "summary": self.summary,
             "attributes": self.attributes,
@@ -372,6 +374,7 @@ class GraphToolsService:
                 NodeInfo(
                     uuid=node.get("uuid", ""),
                     name=node.get("name", ""),
+                    aliases=node.get("aliases", []) or [],
                     labels=node.get("labels", []) or [],
                     summary=node.get("summary", "") or "",
                     attributes=node.get("attributes", {}) or {},
@@ -450,6 +453,7 @@ class GraphToolsService:
                 searchable = " ".join(
                     [
                         node.name,
+                        " ".join(node.aliases),
                         node.summary,
                         " ".join(node.labels),
                         json.dumps(node.attributes, ensure_ascii=False),
@@ -477,7 +481,15 @@ class GraphToolsService:
 
     def get_entity_summary(self, graph_id: str, entity_name: str) -> Dict[str, Any]:
         search_result = self.search_graph(graph_id=graph_id, query=entity_name, limit=20, scope="both")
-        entity_node = next((node for node in self.get_all_nodes(graph_id) if node.name.lower() == entity_name.lower()), None)
+        normalized_query = entity_name.lower()
+        entity_node = next(
+            (
+                node for node in self.get_all_nodes(graph_id)
+                if node.name.lower() == normalized_query
+                or any(alias.lower() == normalized_query for alias in node.aliases)
+            ),
+            None,
+        )
         related_edges = self.get_node_edges(graph_id, entity_node.uuid) if entity_node else []
         return {
             "entity_name": entity_name,
@@ -591,8 +603,8 @@ class GraphToolsService:
         for edge in all_edges:
             source_uuid = edge.get("source_node_uuid", "")
             target_uuid = edge.get("target_node_uuid", "")
-            source_name = node_map.get(source_uuid, NodeInfo("", "", [], "", {})).name or source_uuid[:8]
-            target_name = node_map.get(target_uuid, NodeInfo("", "", [], "", {})).name or target_uuid[:8]
+            source_name = node_map.get(source_uuid, NodeInfo("", "", [], [], "", {})).name or source_uuid[:8]
+            target_name = node_map.get(target_uuid, NodeInfo("", "", [], [], "", {})).name or target_uuid[:8]
             chain = f"{source_name} --[{edge.get('name', '')}]--> {target_name}"
             if chain not in relationship_chains:
                 relationship_chains.append(chain)

@@ -5,6 +5,7 @@
 
 import os
 import json
+import threading
 import uuid
 import shutil
 from datetime import datetime
@@ -107,6 +108,15 @@ class ProjectManager:
     
     # 프로젝트 저장 루트 디렉터리
     PROJECTS_DIR = os.path.join(Config.UPLOAD_FOLDER, 'projects')
+    _locks: Dict[str, threading.RLock] = {}
+    _locks_guard = threading.Lock()
+
+    @classmethod
+    def _lock_for(cls, project_id: str) -> threading.RLock:
+        with cls._locks_guard:
+            if project_id not in cls._locks:
+                cls._locks[project_id] = threading.RLock()
+            return cls._locks[project_id]
     
     @classmethod
     def _ensure_projects_dir(cls):
@@ -175,9 +185,10 @@ class ProjectManager:
         if project.ontology is not None:
             project.ontology = normalize_ontology(project.ontology)
         meta_path = cls._get_project_meta_path(project.project_id)
-        
-        with open(meta_path, 'w', encoding='utf-8') as f:
-            json.dump(project.to_dict(), f, ensure_ascii=False, indent=2)
+
+        with cls._lock_for(project.project_id):
+            with open(meta_path, 'w', encoding='utf-8') as f:
+                json.dump(project.to_dict(), f, ensure_ascii=False, indent=2)
     
     @classmethod
     def get_project(cls, project_id: str) -> Optional[Project]:
@@ -191,14 +202,15 @@ class ProjectManager:
             Project 객체, 없으면 None
         """
         meta_path = cls._get_project_meta_path(project_id)
-        
-        if not os.path.exists(meta_path):
-            return None
-        
-        with open(meta_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        return Project.from_dict(data)
+
+        with cls._lock_for(project_id):
+            if not os.path.exists(meta_path):
+                return None
+
+            with open(meta_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            return Project.from_dict(data)
     
     @classmethod
     def list_projects(cls, limit: int = 50) -> List[Project]:
@@ -235,19 +247,25 @@ class ProjectManager:
         Returns:
             삭제 성공 여부
         """
-        project_dir = cls._get_project_dir(project_id)
-        project = cls.get_project(project_id)
-        
-        if not os.path.exists(project_dir):
-            return False
-        
-        if project and project.graph_id:
-            graph_dir = os.path.join(Config.LOCAL_GRAPH_FOLDER, project.graph_id)
-            if os.path.exists(graph_dir):
-                shutil.rmtree(graph_dir)
+        with cls._lock_for(project_id):
+            project_dir = cls._get_project_dir(project_id)
+            project = cls.get_project(project_id)
 
-        shutil.rmtree(project_dir)
-        return True
+            if not os.path.exists(project_dir):
+                return False
+
+            if project and project.graph_id:
+                graph_dir = os.path.join(Config.LOCAL_GRAPH_FOLDER, project.graph_id)
+                if os.path.exists(graph_dir):
+                    shutil.rmtree(graph_dir)
+
+            shutil.rmtree(project_dir)
+            deleted = True
+
+        with cls._locks_guard:
+            cls._locks.pop(project_id, None)
+
+        return deleted
     
     @classmethod
     def save_file_to_project(cls, project_id: str, file_storage, original_filename: str) -> Dict[str, str]:
@@ -287,19 +305,21 @@ class ProjectManager:
     def save_extracted_text(cls, project_id: str, text: str) -> None:
         """추출한 텍스트를 저장한다"""
         text_path = cls._get_project_text_path(project_id)
-        with open(text_path, 'w', encoding='utf-8') as f:
-            f.write(text)
+        with cls._lock_for(project_id):
+            with open(text_path, 'w', encoding='utf-8') as f:
+                f.write(text)
     
     @classmethod
     def get_extracted_text(cls, project_id: str) -> Optional[str]:
         """추출한 텍스트를 가져온다"""
         text_path = cls._get_project_text_path(project_id)
-        
-        if not os.path.exists(text_path):
-            return None
-        
-        with open(text_path, 'r', encoding='utf-8') as f:
-            return f.read()
+
+        with cls._lock_for(project_id):
+            if not os.path.exists(text_path):
+                return None
+
+            with open(text_path, 'r', encoding='utf-8') as f:
+                return f.read()
     
     @classmethod
     def get_project_files(cls, project_id: str) -> List[str]:

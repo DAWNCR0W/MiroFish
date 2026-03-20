@@ -3,6 +3,7 @@
 PDF, Markdown, TXT 파일의 텍스트 추출을 지원한다.
 """
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 from pathlib import Path
 from typing import List, Optional
@@ -119,6 +120,43 @@ class FileParser:
     def _extract_from_txt(file_path: str) -> str:
         """TXT에서 텍스트를 추출하며 자동 인코딩 감지를 지원한다"""
         return _read_text_with_fallback(file_path)
+
+    @classmethod
+    def extract_texts_parallel(
+        cls,
+        file_paths: List[str],
+        max_workers: Optional[int] = None,
+    ) -> List[str]:
+        """
+        여러 파일의 텍스트를 병렬 추출한다.
+
+        입력 순서를 유지하며, 하나라도 실패하면 예외를 그대로 올린다.
+        """
+        if not file_paths:
+            return []
+
+        worker_count = max_workers if max_workers is not None else min(32, len(file_paths))
+        try:
+            worker_count = int(worker_count)
+        except (TypeError, ValueError):
+            worker_count = 1
+
+        worker_count = max(1, min(worker_count, len(file_paths)))
+        if worker_count <= 1:
+            return [cls.extract_text(file_path) for file_path in file_paths]
+
+        texts: List[Optional[str]] = [None] * len(file_paths)
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = {
+                executor.submit(cls.extract_text, file_path): index
+                for index, file_path in enumerate(file_paths)
+            }
+
+            for future in as_completed(futures):
+                index = futures[future]
+                texts[index] = future.result()
+
+        return [text or "" for text in texts]
     
     @classmethod
     def extract_from_multiple(cls, file_paths: List[str]) -> str:
@@ -140,8 +178,63 @@ class FileParser:
                 all_texts.append(f"=== 문서 {i}: {filename} ===\n{text}")
             except Exception as e:
                 all_texts.append(f"=== 문서 {i}: {file_path} (추출 실패: {str(e)}) ===")
-        
+
         return "\n\n".join(all_texts)
+
+    @classmethod
+    def _extract_multiple_entry(cls, index: int, file_path: str) -> str:
+        """여러 파일 처리용 단일 항목을 안전하게 추출한다."""
+        try:
+            text = cls.extract_text(file_path)
+            filename = Path(file_path).name
+            return f"=== 문서 {index}: {filename} ===\n{text}"
+        except Exception as e:
+            return f"=== 문서 {index}: {file_path} (추출 실패: {str(e)}) ==="
+
+    @classmethod
+    def extract_from_multiple_parallel(
+        cls,
+        file_paths: List[str],
+        max_workers: Optional[int] = None,
+    ) -> str:
+        """
+        여러 파일에서 텍스트를 병렬 추출해 병합한다.
+
+        서로 독립적인 파일 처리에만 사용한다.
+        결과는 입력 순서를 유지한다.
+
+        Args:
+            file_paths: 파일 경로 목록
+            max_workers: 스레드 수 상한(None이면 입력 개수에 맞춰 자동 결정)
+
+        Returns:
+            병합된 텍스트
+        """
+        if not file_paths:
+            return ""
+
+        worker_count = max_workers if max_workers is not None else min(32, len(file_paths))
+        try:
+            worker_count = int(worker_count)
+        except (TypeError, ValueError):
+            worker_count = 1
+
+        if worker_count <= 1:
+            return cls.extract_from_multiple(file_paths)
+
+        entries = [""] * len(file_paths)
+
+        with ThreadPoolExecutor(max_workers=min(worker_count, len(file_paths))) as executor:
+            futures = {
+                executor.submit(cls._extract_multiple_entry, index + 1, file_path): index
+                for index, file_path in enumerate(file_paths)
+            }
+
+            for future in as_completed(futures):
+                index = futures[future]
+                entries[index] = future.result()
+
+        return "\n\n".join(entries)
 
 
 def split_text_into_chunks(

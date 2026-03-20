@@ -4,7 +4,6 @@ LLM을 사용해 텍스트 블록에서 엔티티와 관계를 추출한다.
 """
 
 import json
-import re
 from typing import Any, Dict, List, Optional
 
 from ..utils.llm_client import LLMClient
@@ -26,7 +25,30 @@ class LocalGraphExtractor:
 
     @staticmethod
     def _normalize_token(value: str) -> str:
-        return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
+        return "".join(ch.lower() for ch in (value or "").strip() if ch.isalnum())
+
+    @classmethod
+    def _normalize_aliases(cls, aliases: Any, primary_name: str = "") -> List[str]:
+        if not isinstance(aliases, list):
+            return []
+
+        primary_key = cls._normalize_token(primary_name)
+        normalized_aliases: List[str] = []
+        seen = set()
+
+        for alias in aliases:
+            if not isinstance(alias, str):
+                continue
+
+            cleaned = alias.strip()
+            alias_key = cls._normalize_token(cleaned)
+            if not cleaned or not alias_key or alias_key == primary_key or alias_key in seen:
+                continue
+
+            seen.add(alias_key)
+            normalized_aliases.append(cleaned)
+
+        return normalized_aliases
 
     def _normalize_entity_type(self, value: str, allowed_types: List[str], name: str = "") -> Optional[str]:
         if not allowed_types:
@@ -72,6 +94,7 @@ class LocalGraphExtractor:
         return {
             "name": name,
             "type": entity_type,
+            "aliases": self._normalize_aliases(entity.get("aliases"), primary_name=name),
             "summary": (entity.get("summary") or "").strip(),
             "attributes": attributes,
         }
@@ -124,7 +147,7 @@ class LocalGraphExtractor:
         self,
         text: str,
         ontology: Dict[str, Any],
-        known_entities: Optional[List[Dict[str, str]]] = None,
+        known_entities: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         ontology = normalize_ontology(ontology)
         entity_defs = ontology.get("entity_types", [])
@@ -163,7 +186,7 @@ class LocalGraphExtractor:
 4. attributes는 ontology에 정의된 속성명만 사용할 수 있다
 5. 출력은 JSON 객체여야 하며, 다음만 포함해야 한다:
 {
-  "entities": [{"name": "...", "type": "...", "summary": "...", "attributes": {...}}],
+  "entities": [{"name": "...", "type": "...", "aliases": ["..."], "summary": "...", "attributes": {...}}],
   "relationships": [{"type": "...", "source_name": "...", "source_type": "...", "target_name": "...", "target_type": "...", "fact": "...", "attributes": {...}}],
   "summary": "..."
 }
@@ -172,6 +195,9 @@ class LocalGraphExtractor:
 8. 엔티티 유형이 애매하면 ontology 안에서 가장 가까운 엔티티 유형으로 매핑한다. 특히 구체 유형이 불명확하면 Person 또는 Organization을 우선 사용한다
 9. known entities에 이미 있는 이름이 보이면 그 엔티티를 재사용하고, 관계도 그 이름을 기준으로 연결한다
 10. 텍스트에 명시적인 소속, 보도, 대응, 지지, 반대, 협력 관계가 있으면 relationships를 비우지 말고 최소 1개 이상 추출한다
+11. 서로 다른 언어/문자 표기라도 같은 실제 엔티티면 새 엔티티를 만들지 말고 기존 엔티티의 name을 재사용한다
+12. 다른 언어 표기, 번역명, 음역명은 entities[].aliases에 넣는다. 예: Wuhan University / 武汉大学 / 우한대학교
+13. relationships의 source_name과 target_name은 가능하면 known entities의 canonical name을 그대로 사용한다
 """
 
         user_prompt = f"""## Ontology

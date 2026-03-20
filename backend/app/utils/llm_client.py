@@ -5,7 +5,12 @@ OpenAI 형식 호출을 통일해서 사용한다.
 
 import json
 import re
+import threading
+import time
 from typing import Optional, Dict, Any, List
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 from openai import OpenAI
 
 from ..config import Config
@@ -25,6 +30,16 @@ def _get_client_base_url(client: OpenAI) -> str:
     """OpenAI 클라이언트에서 base_url 문자열을 안전하게 꺼낸다"""
     base_url = getattr(client, "base_url", None) or getattr(client, "_base_url", None)
     return str(base_url or "")
+
+
+def _normalize_parallel_value(value: Any) -> Optional[int]:
+    """병렬 설정값을 안전한 양의 정수로 정규화한다."""
+    try:
+        resolved = int(value)
+    except (TypeError, ValueError):
+        return None
+
+    return resolved if resolved > 0 else None
 
 
 def _is_lm_studio_client(client: OpenAI) -> bool:
@@ -222,15 +237,20 @@ def _parse_json_from_content(content: Optional[str]) -> Dict[str, Any]:
 class LLMClient:
     """LLM 클라이언트"""
 
+    _parallel_cache: Dict[str, Dict[str, Any]] = {}
+    _parallel_cache_lock = threading.Lock()
+
     def __init__(
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        max_parallel_requests: Optional[int] = None,
     ):
         self.api_key = api_key or Config.LLM_API_KEY
         self.base_url = base_url or Config.LLM_BASE_URL
         self.model = model or Config.LLM_MODEL_NAME
+        self.max_parallel_requests_override = _normalize_parallel_value(max_parallel_requests)
 
         if not self.api_key:
             raise ValueError("LLM_API_KEY가 설정되지 않음")
@@ -241,6 +261,249 @@ class LLMClient:
             timeout=Config.LLM_REQUEST_TIMEOUT,
             max_retries=Config.LLM_MAX_RETRIES,
         )
+
+    def get_max_parallel_requests(
+        self,
+        fallback: Optional[int] = None,
+        max_cap: Optional[int] = None,
+    ) -> int:
+        """설정, 서버 메타데이터, 안전한 fallback을 반영한 병렬 요청 수를 반환한다."""
+        if self.max_parallel_requests_override is not None:
+            cap = max(1, int(max_cap or Config.GRAPH_BUILD_MAX_PARALLEL_WORKERS))
+            return min(self.max_parallel_requests_override, cap)
+
+        return self.get_recommended_parallel_requests(
+            api_key=self.api_key,
+            base_url=self.base_url,
+            model=self.model,
+            fallback=fallback,
+            max_cap=max_cap,
+        )
+
+    @classmethod
+    def get_recommended_parallel_requests(
+        cls,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        model: Optional[str] = None,
+        fallback: Optional[int] = None,
+        max_cap: Optional[int] = None,
+    ) -> int:
+        workers, _ = cls.get_recommended_parallel_requests_with_source(
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            fallback=fallback,
+            max_cap=max_cap,
+        )
+        return workers
+
+    @classmethod
+    def get_recommended_parallel_requests_with_source(
+        cls,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        model: Optional[str] = None,
+        fallback: Optional[int] = None,
+        max_cap: Optional[int] = None,
+    ) -> tuple[int, str]:
+        resolved_api_key = api_key or Config.LLM_API_KEY
+        resolved_base_url = (base_url or Config.LLM_BASE_URL or "").rstrip("/")
+        resolved_model = model or Config.LLM_MODEL_NAME or ""
+        fallback_workers = max(1, int(fallback or Config.GRAPH_BUILD_PARALLEL_WORKERS))
+        worker_cap = max(1, int(max_cap or Config.GRAPH_BUILD_MAX_PARALLEL_WORKERS))
+
+        if Config.LLM_MAX_PARALLEL_REQUESTS > 0:
+            return min(Config.LLM_MAX_PARALLEL_REQUESTS, worker_cap), "env_override"
+
+        cache_key = f"{resolved_base_url}::{resolved_model}"
+        now = time.time()
+
+        with cls._parallel_cache_lock:
+            cached = cls._parallel_cache.get(cache_key)
+            if cached and now - cached["ts"] <= Config.LLM_CAPABILITY_CACHE_TTL_SECONDS:
+                return cached["workers"], cached["source"]
+
+        detected = cls._detect_parallel_requests(
+            api_key=resolved_api_key,
+            base_url=resolved_base_url,
+            model=resolved_model,
+        )
+        if detected:
+            workers = max(1, min(int(detected), worker_cap))
+            source = "server_capability"
+        else:
+            workers = min(fallback_workers, worker_cap)
+            source = "config_fallback"
+
+        with cls._parallel_cache_lock:
+            cls._parallel_cache[cache_key] = {
+                "workers": workers,
+                "source": source,
+                "ts": now,
+            }
+
+        return workers, source
+
+    @classmethod
+    def _detect_parallel_requests(
+        cls,
+        *,
+        api_key: Optional[str],
+        base_url: str,
+        model: str,
+    ) -> Optional[int]:
+        for endpoint in cls._candidate_model_metadata_endpoints(base_url):
+            try:
+                payload = cls._fetch_json(
+                    endpoint,
+                    api_key=api_key,
+                    timeout=Config.LLM_CAPABILITY_REQUEST_TIMEOUT,
+                )
+            except Exception:
+                continue
+
+            detected = cls._extract_parallel_from_payload(payload, model=model)
+            if detected:
+                logger.info("LLM 서버 메타데이터에서 병렬 설정을 감지함: endpoint=%s, parallel=%s", endpoint, detected)
+                return detected
+
+        return None
+
+    @classmethod
+    def _candidate_model_metadata_endpoints(cls, base_url: str) -> List[str]:
+        if not base_url:
+            return []
+
+        stripped = base_url.rstrip("/")
+        parsed = urlparse(stripped)
+        path = parsed.path.rstrip("/")
+        roots = []
+        metadata_roots = []
+
+        if path.endswith("/v1"):
+            roots.append(stripped)
+            metadata_roots.append(stripped[: -len("/v1")])
+        else:
+            roots.append(stripped)
+
+        if path.endswith("/api/v1"):
+            metadata_roots.append(stripped[: -len("/api/v1")])
+        elif not path.endswith("/v1"):
+            metadata_roots.append(stripped)
+
+        candidates: List[str] = []
+        for root in roots:
+            normalized = root.rstrip("/")
+            for suffix in ("/models",):
+                candidate = f"{normalized}{suffix}"
+                if candidate not in candidates:
+                    candidates.append(candidate)
+        for root in metadata_roots:
+            normalized = root.rstrip("/")
+            for suffix in ("/api/v1/models", "/api/v0/models"):
+                candidate = f"{normalized}{suffix}"
+                if candidate not in candidates:
+                    candidates.append(candidate)
+        return candidates
+
+    @classmethod
+    def _fetch_json(
+        cls,
+        url: str,
+        *,
+        api_key: Optional[str],
+        timeout: float,
+    ) -> Dict[str, Any]:
+        headers = {"Accept": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        request = Request(url, headers=headers, method="GET")
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            raise RuntimeError(f"HTTP {exc.code}") from exc
+        except URLError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+    @classmethod
+    def _extract_parallel_from_payload(cls, payload: Dict[str, Any], *, model: str) -> Optional[int]:
+        models = payload.get("models")
+        if not isinstance(models, list):
+            models = payload.get("data")
+        if not isinstance(models, list):
+            return None
+
+        matched = cls._find_matching_model_entry(models, model=model)
+        if matched:
+            detected = cls._extract_parallel_from_model_entry(matched)
+            if detected:
+                return detected
+
+        for entry in models:
+            detected = cls._extract_parallel_from_model_entry(entry)
+            if detected:
+                return detected
+
+        return None
+
+    @classmethod
+    def _find_matching_model_entry(cls, models: List[Dict[str, Any]], *, model: str) -> Optional[Dict[str, Any]]:
+        if not model:
+            return None
+
+        for entry in models:
+            entry_id = str(entry.get("id") or "")
+            entry_key = str(entry.get("key") or "")
+            if model in {entry_id, entry_key}:
+                return entry
+
+            loaded_instances = entry.get("loaded_instances")
+            if isinstance(loaded_instances, list):
+                for instance in loaded_instances:
+                    instance_id = str(instance.get("id") or "")
+                    if model == instance_id:
+                        return entry
+        return None
+
+    @classmethod
+    def _extract_parallel_from_model_entry(cls, entry: Dict[str, Any]) -> Optional[int]:
+        loaded_instances = entry.get("loaded_instances")
+        if isinstance(loaded_instances, list):
+            for instance in loaded_instances:
+                detected = cls._extract_parallel_from_mapping(instance.get("config"))
+                if detected:
+                    return detected
+                detected = cls._extract_parallel_from_mapping(instance)
+                if detected:
+                    return detected
+
+        return cls._extract_parallel_from_mapping(entry)
+
+    @staticmethod
+    def _extract_parallel_from_mapping(value: Any) -> Optional[int]:
+        if not isinstance(value, dict):
+            return None
+
+        for key in (
+            "parallel",
+            "n_parallel",
+            "max_parallel",
+            "max_concurrent_predictions",
+            "maxConcurrentPredictions",
+            "num_parallel",
+        ):
+            candidate = value.get(key)
+            try:
+                candidate_int = int(candidate)
+            except (TypeError, ValueError):
+                continue
+            if candidate_int > 0:
+                return candidate_int
+
+        return None
 
     def chat(
         self,

@@ -12,7 +12,7 @@ class TextProcessor:
     @staticmethod
     def extract_from_files(file_paths: List[str]) -> str:
         """여러 파일에서 텍스트를 추출한다"""
-        return FileParser.extract_from_multiple(file_paths)
+        return FileParser.extract_from_multiple_parallel(file_paths)
     
     @staticmethod
     def split_text(

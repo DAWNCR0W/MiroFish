@@ -3,13 +3,17 @@
 로컬 파일 저장과 LLM 추출을 사용해 지식 그래프를 구축합니다.
 """
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
+from ..config import Config
 from ..models.task import TaskManager, TaskStatus
+from ..utils.llm_client import LLMClient
+from .graph_entity_deduper import GraphEntityDeduper
 from .local_graph_extractor import LocalGraphExtractor
 from .local_graph_store import LocalGraphStore
 from .text_processor import TextProcessor
@@ -39,10 +43,13 @@ class GraphBuilderService:
     외부 그래프 서비스 대신 로컬 저장소를 사용해 기존 API 계약을 유지합니다.
     """
 
+    MAX_BATCH_PARALLEL_WORKERS = Config.GRAPH_BUILD_MAX_PARALLEL_WORKERS
+
     def __init__(self, api_key: Optional[str] = None):
         self.task_manager = TaskManager()
         self.store = LocalGraphStore()
         self.extractor = LocalGraphExtractor()
+        self._extractor_local = threading.local()
 
     def build_graph_async(
         self,
@@ -52,6 +59,7 @@ class GraphBuilderService:
         chunk_size: int = 500,
         chunk_overlap: int = 50,
         batch_size: int = 3,
+        parallel_workers: Optional[int] = None,
     ) -> str:
         task_id = self.task_manager.create_task(
             task_type="graph_build",
@@ -64,7 +72,7 @@ class GraphBuilderService:
 
         thread = threading.Thread(
             target=self._build_graph_worker,
-            args=(task_id, text, ontology, graph_name, chunk_size, chunk_overlap, batch_size),
+            args=(task_id, text, ontology, graph_name, chunk_size, chunk_overlap, batch_size, parallel_workers),
             daemon=True,
         )
         thread.start()
@@ -79,6 +87,7 @@ class GraphBuilderService:
         chunk_size: int,
         chunk_overlap: int,
         batch_size: int,
+        parallel_workers: Optional[int] = None,
     ) -> None:
         try:
             self.task_manager.update_task(
@@ -105,12 +114,13 @@ class GraphBuilderService:
             episode_uuids = self.add_text_batches(
                 graph_id,
                 chunks,
-                batch_size,
-                lambda msg, prog: self.task_manager.update_task(
+                batch_size=batch_size,
+                progress_callback=lambda msg, prog: self.task_manager.update_task(
                     task_id,
                     progress=20 + int(prog * 0.4),
                     message=msg,
                 ),
+                parallel_workers=parallel_workers,
             )
 
             self.task_manager.update_task(
@@ -156,16 +166,147 @@ class GraphBuilderService:
     def set_ontology(self, graph_id: str, ontology: Dict[str, Any]) -> None:
         self.store.save_ontology(graph_id, ontology)
 
+    @staticmethod
+    def _custom_label(node: Dict[str, Any]) -> str:
+        return next(
+            (
+                label for label in node.get("labels", [])
+                if label not in ["Entity", "Node"]
+            ),
+            "",
+        )
+
+    def _snapshot_known_entities(self, graph_id: str) -> List[Dict[str, Any]]:
+        return [
+            {
+                "name": node.get("name", ""),
+                "type": self._custom_label(node),
+                "aliases": node.get("aliases", []) or [],
+            }
+            for node in self.store.get_nodes(graph_id)
+        ]
+
+    def _resolve_parallel_workers(
+        self,
+        total_items: int,
+        batch_size: int,
+        parallel_workers: Optional[int] = None,
+    ) -> int:
+        if total_items <= 1:
+            return 1
+
+        if parallel_workers is None:
+            parallel_workers = LLMClient.get_recommended_parallel_requests(
+                fallback=Config.GRAPH_BUILD_PARALLEL_WORKERS,
+                max_cap=self.MAX_BATCH_PARALLEL_WORKERS,
+            )
+
+        try:
+            resolved = int(parallel_workers)
+        except (TypeError, ValueError):
+            resolved = 1
+
+        return max(1, min(resolved, total_items, self.MAX_BATCH_PARALLEL_WORKERS))
+
+    def _extract_chunk(
+        self,
+        chunk: str,
+        ontology: Dict[str, Any],
+        known_entities: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        return self._get_thread_extractor().extract(
+            text=chunk,
+            ontology=ontology,
+            known_entities=known_entities,
+        )
+
+    def _get_thread_extractor(self):
+        base_extractor = getattr(self, "extractor", None)
+        thread_local = getattr(self, "_extractor_local", None)
+
+        if base_extractor is None or thread_local is None or not isinstance(base_extractor, LocalGraphExtractor):
+            return base_extractor
+
+        extractor = getattr(thread_local, "extractor", None)
+        extractor_source_id = getattr(thread_local, "extractor_source_id", None)
+        if extractor is None or extractor_source_id != id(base_extractor):
+            extractor = base_extractor
+            thread_local.extractor = extractor
+            thread_local.extractor_source_id = id(base_extractor)
+        return extractor
+
+    def _process_batch_wave(
+        self,
+        graph_id: str,
+        wave_chunks: List[str],
+        ontology: Dict[str, Any],
+        parallel_workers: int,
+    ) -> List[str]:
+        if not wave_chunks:
+            return []
+
+        wave_known_entities = self._snapshot_known_entities(graph_id)
+        wave_records: List[Dict[str, Any]] = []
+
+        for chunk in wave_chunks:
+            episode = self.store.add_episode(graph_id, chunk, source="document")
+            wave_records.append({
+                "chunk": chunk,
+                "episode": episode,
+            })
+
+        if len(wave_records) == 1 or parallel_workers <= 1:
+            for record in wave_records:
+                record["extraction"] = self._extract_chunk(
+                    record["chunk"],
+                    ontology,
+                    wave_known_entities,
+                )
+        else:
+            with ThreadPoolExecutor(max_workers=min(parallel_workers, len(wave_records))) as executor:
+                future_to_index = {
+                    executor.submit(
+                        self._extract_chunk,
+                        record["chunk"],
+                        ontology,
+                        wave_known_entities,
+                    ): index
+                    for index, record in enumerate(wave_records)
+                }
+
+                for future in as_completed(future_to_index):
+                    index = future_to_index[future]
+                    wave_records[index]["extraction"] = future.result()
+
+        episode_uuids: List[str] = []
+        for record in wave_records:
+            self.store.apply_extraction(
+                graph_id=graph_id,
+                episode_id=record["episode"]["uuid"],
+                extraction=record["extraction"],
+                created_at=record["episode"]["created_at"],
+            )
+            episode_uuids.append(record["episode"]["uuid"])
+
+        return episode_uuids
+
     def add_text_batches(
         self,
         graph_id: str,
         chunks: List[str],
         batch_size: int = 3,
         progress_callback: Optional[Callable] = None,
+        parallel_workers: Optional[int] = None,
     ) -> List[str]:
         episode_uuids: List[str] = []
         total_chunks = len(chunks)
         ontology = self.store.get_ontology(graph_id)
+        completed_chunks = 0
+        effective_workers = self._resolve_parallel_workers(
+            total_items=total_chunks,
+            batch_size=batch_size,
+            parallel_workers=parallel_workers,
+        )
 
         for i in range(0, total_chunks, batch_size):
             batch_chunks = chunks[i:i + batch_size]
@@ -173,39 +314,26 @@ class GraphBuilderService:
             total_batches = (total_chunks + batch_size - 1) // batch_size if total_chunks else 0
 
             if progress_callback:
-                progress = (i + len(batch_chunks)) / total_chunks if total_chunks else 1.0
+                progress = completed_chunks / total_chunks if total_chunks else 1.0
                 progress_callback(
                     f"{batch_num}/{total_batches}번째 배치 데이터 처리 중 ({len(batch_chunks)}개 청크)...",
                     progress,
                 )
 
-            for chunk in batch_chunks:
-                known_entities = [
-                    {
-                        "name": node.get("name", ""),
-                        "type": next(
-                            (
-                                label for label in node.get("labels", [])
-                                if label not in ["Entity", "Node"]
-                            ),
-                            "",
-                        ),
-                    }
-                    for node in self.store.get_nodes(graph_id)
-                ]
-                episode = self.store.add_episode(graph_id, chunk, source="document")
-                extraction = self.extractor.extract(
-                    text=chunk,
-                    ontology=ontology,
-                    known_entities=known_entities,
+            batch_episode_uuids = self._process_batch_wave(
+                graph_id=graph_id,
+                wave_chunks=batch_chunks,
+                ontology=ontology,
+                parallel_workers=effective_workers,
+            )
+            episode_uuids.extend(batch_episode_uuids)
+            completed_chunks += len(batch_chunks)
+
+            if progress_callback:
+                progress_callback(
+                    f"{batch_num}/{total_batches}번째 배치 처리 완료 ({completed_chunks}/{total_chunks}개 청크)...",
+                    completed_chunks / total_chunks if total_chunks else 1.0,
                 )
-                self.store.apply_extraction(
-                    graph_id=graph_id,
-                    episode_id=episode["uuid"],
-                    extraction=extraction,
-                    created_at=episode["created_at"],
-                )
-                episode_uuids.append(episode["uuid"])
 
         return episode_uuids
 
@@ -287,6 +415,7 @@ class GraphBuilderService:
             {
                 "uuid": node.get("uuid"),
                 "name": node.get("name"),
+                "aliases": node.get("aliases", []) or [],
                 "labels": node.get("labels", []),
                 "summary": node.get("summary", ""),
                 "attributes": node.get("attributes", {}),
@@ -322,6 +451,10 @@ class GraphBuilderService:
             "node_count": len(nodes_data),
             "edge_count": len(edges_data),
         }
+
+    def dedupe_graph_entities(self, graph_id: str, dry_run: bool = True) -> Dict[str, Any]:
+        deduper = GraphEntityDeduper(store=self.store)
+        return deduper.dedupe_graph(graph_id=graph_id, dry_run=dry_run)
 
     def delete_graph(self, graph_id: str) -> None:
         self.store.delete_graph(graph_id)

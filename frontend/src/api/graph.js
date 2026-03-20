@@ -54,6 +54,20 @@ export function getGraphData(graphId) {
 }
 
 /**
+ * 기존 그래프의 중복 엔티티를 병합합니다.
+ * @param {String} graphId - 그래프 ID
+ * @param {Object} data - { dry_run?: boolean, include_graph_data?: boolean }
+ * @returns {Promise}
+ */
+export function dedupeGraph(graphId, data = {}) {
+  return service({
+    url: `/api/graph/dedupe/${graphId}`,
+    method: 'post',
+    data
+  })
+}
+
+/**
  * 프로젝트 정보를 가져옵니다.
  * @param {String} projectId - 프로젝트 ID
  * @returns {Promise}
