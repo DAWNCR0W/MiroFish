@@ -17,7 +17,7 @@
           </div>
 
           <!-- 섹션 목록 -->
-          <div class="sections-list">
+          <div v-if="reportOutline.sections?.length" class="sections-list">
             <div
               v-for="(section, idx) in reportOutline.sections"
               :key="idx"
@@ -62,6 +62,17 @@
                 </div>
               </div>
             </div>
+          </div>
+
+          <div v-else class="empty-report-state" :class="{ 'is-error': isComplete }">
+            <span class="empty-report-title">
+              {{ isComplete ? '보고서 본문이 생성되지 않았습니다' : '보고서 목차를 준비하는 중입니다' }}
+            </span>
+            <p class="empty-report-desc">
+              {{ isComplete
+                ? '이번 보고서는 비어 있는 목차로 완료 처리되었습니다. 다시 생성하면 정상 본문을 만들 수 있습니다.'
+                : '에이전트가 목차와 섹션을 준비하면 여기에 보고서 본문이 나타납니다.' }}
+            </p>
           </div>
         </div>
 
@@ -390,9 +401,9 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, nextTick, h, reactive } from 'vue'
+import { ref, computed, watch, onUnmounted, nextTick, h, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { getAgentLog, getConsoleLog } from '../api/report'
+import { getAgentLog, getConsoleLog, getReport, getReportSections } from '../api/report'
 
 const router = useRouter()
 
@@ -428,6 +439,85 @@ const leftPanel = ref(null)
 const rightPanel = ref(null)
 const logContent = ref(null)
 const showRawResult = reactive({})
+
+const resetReportState = () => {
+  agentLogs.value = []
+  consoleLogs.value = []
+  agentLogLine.value = 0
+  consoleLogLine.value = 0
+  reportOutline.value = null
+  currentSectionIndex.value = null
+  generatedSections.value = {}
+  expandedContent.value = new Set()
+  expandedLogs.value = new Set()
+  collapsedSections.value = new Set()
+  isComplete.value = false
+  startTime.value = null
+}
+
+const applyPersistedReportData = (reportData) => {
+  if (!reportData) return
+
+  if (reportData.outline) {
+    reportOutline.value = reportData.outline
+  }
+
+  if (!startTime.value && reportData.created_at) {
+    startTime.value = new Date(reportData.created_at)
+  }
+
+  if (reportData.status === 'completed') {
+    isComplete.value = true
+    currentSectionIndex.value = null
+    emit('update-status', 'completed')
+  }
+}
+
+const applyPersistedSections = (sections) => {
+  if (!Array.isArray(sections) || sections.length === 0) return
+
+  const nextSections = { ...generatedSections.value }
+  sections.forEach(section => {
+    if (section?.section_index && section.content) {
+      nextSections[section.section_index] = section.content
+    }
+  })
+  generatedSections.value = nextSections
+}
+
+const loadPersistedReportState = async () => {
+  if (!props.reportId) return
+
+  try {
+    const [reportRes, sectionsRes] = await Promise.all([
+      getReport(props.reportId),
+      getReportSections(props.reportId)
+    ])
+
+    if (reportRes.success && reportRes.data) {
+      applyPersistedReportData(reportRes.data)
+
+      if (
+        reportRes.data.status === 'completed'
+        && !reportRes.data.outline?.sections?.length
+      ) {
+        addLog('완료된 보고서이지만 저장된 목차가 비어 있습니다. 다시 생성이 필요할 수 있습니다.')
+      }
+    }
+
+    if (sectionsRes.success && sectionsRes.data) {
+      applyPersistedSections(sectionsRes.data.sections || [])
+
+      if (sectionsRes.data.is_complete) {
+        isComplete.value = true
+        currentSectionIndex.value = null
+        emit('update-status', 'completed')
+      }
+    }
+  } catch (err) {
+    console.warn('저장된 보고서 데이터를 불러오지 못했습니다:', err)
+  }
+}
 
 // 토글 함수
 const toggleRawResult = (timestamp, event) => {
@@ -2170,33 +2260,15 @@ const stopPolling = () => {
   }
 }
 
-// 라이프사이클
-onMounted(() => {
-  if (props.reportId) {
-    addLog(`보고서 에이전트를 초기화했습니다: ${props.reportId}`)
-    startPolling()
-  }
-})
-
 onUnmounted(() => {
   stopPolling()
 })
 
-watch(() => props.reportId, (newId) => {
+watch(() => props.reportId, async (newId) => {
   if (newId) {
-    agentLogs.value = []
-    consoleLogs.value = []
-    agentLogLine.value = 0
-    consoleLogLine.value = 0
-    reportOutline.value = null
-    currentSectionIndex.value = null
-    generatedSections.value = {}
-    expandedContent.value = new Set()
-    expandedLogs.value = new Set()
-    collapsedSections.value = new Set()
-    isComplete.value = false
-    startTime.value = null
-
+    addLog(`보고서 에이전트를 초기화했습니다: ${newId}`)
+    resetReportState()
+    await loadPersistedReportState()
     startPolling()
   }
 }, { immediate: true })
@@ -2415,6 +2487,31 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   flex-direction: column;
   gap: 32px;
+}
+
+.empty-report-state {
+  padding: 24px 0;
+  border-top: 1px solid #E5E7EB;
+  color: #6B7280;
+}
+
+.empty-report-state.is-error {
+  color: #991B1B;
+}
+
+.empty-report-title {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  color: inherit;
+}
+
+.empty-report-desc {
+  margin: 10px 0 0;
+  max-width: 620px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: inherit;
 }
 
 .report-section-item {

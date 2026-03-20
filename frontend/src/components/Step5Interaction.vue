@@ -17,7 +17,7 @@
           </div>
 
           <!-- 섹션 목록 -->
-          <div class="sections-list">
+          <div v-if="reportOutline.sections?.length" class="sections-list">
             <div 
               v-for="(section, idx) in reportOutline.sections" 
               :key="idx"
@@ -62,6 +62,11 @@
                 </div>
               </div>
             </div>
+          </div>
+
+          <div v-else class="empty-report-state">
+            <span class="empty-report-title">보고서 본문이 아직 준비되지 않았습니다</span>
+            <p class="empty-report-desc">저장된 목차나 섹션이 확인되면 여기에 보고서 본문이 표시됩니다.</p>
           </div>
         </div>
 
@@ -412,7 +417,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { chatWithReport, getReport, getAgentLog } from '../api/report'
+import { chatWithReport, getReport, getAgentLog, getReportSections } from '../api/report'
 import { interviewAgents, getSimulationProfilesRealtime } from '../api/simulation'
 
 const props = defineProps({
@@ -451,6 +456,25 @@ const generatedSections = ref({})
 const collapsedSections = ref(new Set())
 const currentSectionIndex = ref(null)
 const profiles = ref([])
+
+const applyPersistedReportData = (reportData) => {
+  if (!reportData) return
+  if (reportData.outline) {
+    reportOutline.value = reportData.outline
+  }
+}
+
+const applyPersistedSections = (sections) => {
+  if (!Array.isArray(sections) || sections.length === 0) return
+
+  const nextSections = { ...generatedSections.value }
+  sections.forEach(section => {
+    if (section?.section_index && section.content) {
+      nextSections[section.section_index] = section.content
+    }
+  })
+  generatedSections.value = nextSections
+}
 
 // Helper Methods
 const isSectionCompleted = (sectionIndex) => {
@@ -875,10 +899,21 @@ const loadReportData = async () => {
   try {
     addLog(`보고서 데이터 로드: ${props.reportId}`)
     
-    // Get report info
-    const reportRes = await getReport(props.reportId)
+    const [reportRes, sectionsRes] = await Promise.all([
+      getReport(props.reportId),
+      getReportSections(props.reportId)
+    ])
+
     if (reportRes.success && reportRes.data) {
-      // Load agent logs to get report outline and sections
+      applyPersistedReportData(reportRes.data)
+    }
+
+    if (sectionsRes.success && sectionsRes.data) {
+      applyPersistedSections(sectionsRes.data.sections || [])
+    }
+
+    if (reportRes.success && reportRes.data) {
+      // Load agent logs to get live outline/section events
       await loadAgentLogs()
     }
   } catch (err) {
@@ -1080,6 +1115,27 @@ watch(() => props.simulationId, (newId) => {
   display: flex;
   flex-direction: column;
   gap: 32px;
+}
+
+.empty-report-state {
+  padding: 24px 0;
+  border-top: 1px solid #E5E7EB;
+  color: #6B7280;
+}
+
+.empty-report-title {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  color: inherit;
+}
+
+.empty-report-desc {
+  margin: 10px 0 0;
+  max-width: 620px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: inherit;
 }
 
 .report-section-item {

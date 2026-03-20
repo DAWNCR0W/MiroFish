@@ -43,6 +43,14 @@ export const getReport = (reportId) => {
 }
 
 /**
+ * 생성된 보고서 섹션 목록을 가져옵니다.
+ * @param {string} reportId
+ */
+export const getReportSections = (reportId) => {
+  return service.get(`/api/report/${reportId}/sections`)
+}
+
+/**
  * 보고서 에이전트와 대화합니다.
  * @param {Object} data - { simulation_id, message, chat_history? }
  */
