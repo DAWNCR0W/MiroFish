@@ -1,9 +1,8 @@
 """
-数据模型模块
+데이터 모델 모듈
 """
 
 from .task import TaskManager, TaskStatus
 from .project import Project, ProjectStatus, ProjectManager
 
 __all__ = ['TaskManager', 'TaskStatus', 'Project', 'ProjectStatus', 'ProjectManager']
-
