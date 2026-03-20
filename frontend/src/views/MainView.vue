@@ -1,6 +1,6 @@
 <template>
   <div class="main-view">
-    <!-- Header -->
+    <!-- 헤더 -->
     <header class="app-header">
       <div class="header-left">
         <div class="brand" @click="router.push('/')">MIROFISH</div>
@@ -15,14 +15,14 @@
             :class="{ active: viewMode === mode }"
             @click="viewMode = mode"
           >
-            {{ { graph: '图谱', split: '双栏', workbench: '工作台' }[mode] }}
+            {{ { graph: '그래프', split: '분할', workbench: '작업공간' }[mode] }}
           </button>
         </div>
       </div>
 
       <div class="header-right">
         <div class="workflow-step">
-          <span class="step-num">Step {{ currentStep }}/5</span>
+          <span class="step-num">{{ currentStep }}단계 / 5단계</span>
           <span class="step-name">{{ stepNames[currentStep - 1] }}</span>
         </div>
         <div class="step-divider"></div>
@@ -33,9 +33,9 @@
       </div>
     </header>
 
-    <!-- Main Content Area -->
+    <!-- 주요 콘텐츠 영역 -->
     <main class="content-area">
-      <!-- Left Panel: Graph -->
+      <!-- 왼쪽 패널: 그래프 -->
       <div class="panel-wrapper left" :style="leftPanelStyle">
         <GraphPanel 
           :graphData="graphData"
@@ -46,9 +46,9 @@
         />
       </div>
 
-      <!-- Right Panel: Step Components -->
+      <!-- 오른쪽 패널: 단계 컴포넌트 -->
       <div class="panel-wrapper right" :style="rightPanelStyle">
-        <!-- Step 1: 图谱构建 -->
+        <!-- 1단계: 그래프 구축 -->
         <Step1GraphBuild 
           v-if="currentStep === 1"
           :currentPhase="currentPhase"
@@ -59,7 +59,7 @@
           :systemLogs="systemLogs"
           @next-step="handleNextStep"
         />
-        <!-- Step 2: 环境搭建 -->
+        <!-- 2단계: 환경 설정 -->
         <Step2EnvSetup
           v-else-if="currentStep === 2"
           :projectData="projectData"
@@ -86,14 +86,14 @@ import { getPendingUpload, clearPendingUpload } from '../store/pendingUpload'
 const route = useRoute()
 const router = useRouter()
 
-// Layout State
+// 레이아웃 상태
 const viewMode = ref('split') // graph | split | workbench
 
-// Step State
-const currentStep = ref(1) // 1: 图谱构建, 2: 环境搭建, 3: 开始模拟, 4: 报告生成, 5: 深度互动
-const stepNames = ['图谱构建', '环境搭建', '开始模拟', '报告生成', '深度互动']
+// 단계 상태
+const currentStep = ref(1) // 1: 그래프 구축, 2: 환경 설정, 3: 시뮬레이션 시작, 4: 보고서 생성, 5: 심층 상호작용
+const stepNames = ['그래프 구축', '환경 설정', '시뮬레이션 실행', '보고서 생성', '심층 상호작용']
 
-// Data State
+// 데이터 상태
 const currentProjectId = ref(route.params.projectId)
 const loading = ref(false)
 const graphLoading = ref(false)
@@ -105,11 +105,11 @@ const ontologyProgress = ref(null)
 const buildProgress = ref(null)
 const systemLogs = ref([])
 
-// Polling timers
+// 폴링 타이머
 let pollTimer = null
 let graphPollTimer = null
 
-// --- Computed Layout Styles ---
+// --- 계산된 레이아웃 스타일 ---
 const leftPanelStyle = computed(() => {
   if (viewMode.value === 'graph') return { width: '100%', opacity: 1, transform: 'translateX(0)' }
   if (viewMode.value === 'workbench') return { width: '0%', opacity: 0, transform: 'translateX(-20px)' }
@@ -122,7 +122,7 @@ const rightPanelStyle = computed(() => {
   return { width: '50%', opacity: 1, transform: 'translateX(0)' }
 })
 
-// --- Status Computed ---
+// --- 상태 계산 ---
 const statusClass = computed(() => {
   if (error.value) return 'error'
   if (currentPhase.value >= 2) return 'completed'
@@ -130,24 +130,24 @@ const statusClass = computed(() => {
 })
 
 const statusText = computed(() => {
-  if (error.value) return 'Error'
-  if (currentPhase.value >= 2) return 'Ready'
-  if (currentPhase.value === 1) return 'Building Graph'
-  if (currentPhase.value === 0) return 'Generating Ontology'
-  return 'Initializing'
+  if (error.value) return '오류'
+  if (currentPhase.value >= 2) return '준비 완료'
+  if (currentPhase.value === 1) return '그래프 구축 중'
+  if (currentPhase.value === 0) return '온톨로지 생성 중'
+  return '초기화 중'
 })
 
-// --- Helpers ---
+// --- 보조 함수 ---
 const addLog = (msg) => {
   const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) + '.' + new Date().getMilliseconds().toString().padStart(3, '0')
   systemLogs.value.push({ time, msg })
-  // Keep last 100 logs
+  // 최근 100개의 로그만 유지합니다
   if (systemLogs.value.length > 100) {
     systemLogs.value.shift()
   }
 }
 
-// --- Layout Methods ---
+// --- 레이아웃 메서드 ---
 const toggleMaximize = (target) => {
   if (viewMode.value === target) {
     viewMode.value = 'split'
@@ -159,11 +159,11 @@ const toggleMaximize = (target) => {
 const handleNextStep = (params = {}) => {
   if (currentStep.value < 5) {
     currentStep.value++
-    addLog(`进入 Step ${currentStep.value}: ${stepNames[currentStep.value - 1]}`)
+    addLog(`${currentStep.value}단계로 이동: ${stepNames[currentStep.value - 1]}`)
     
-    // 如果是从 Step 2 进入 Step 3，记录模拟轮数配置
+    // 2단계에서 3단계로 이동하면 시뮬레이션 회차 설정을 기록합니다
     if (currentStep.value === 3 && params.maxRounds) {
-      addLog(`自定义模拟轮数: ${params.maxRounds} 轮`)
+      addLog(`사용자 지정 시뮬레이션 회차: ${params.maxRounds}회`)
     }
   }
 }
@@ -171,14 +171,14 @@ const handleNextStep = (params = {}) => {
 const handleGoBack = () => {
   if (currentStep.value > 1) {
     currentStep.value--
-    addLog(`返回 Step ${currentStep.value}: ${stepNames[currentStep.value - 1]}`)
+    addLog(`${currentStep.value}단계로 돌아감: ${stepNames[currentStep.value - 1]}`)
   }
 }
 
-// --- Data Logic ---
+// --- 데이터 로직 ---
 
 const initProject = async () => {
-  addLog('Project view initialized.')
+  addLog('프로젝트 화면을 초기화했습니다.')
   if (currentProjectId.value === 'new') {
     await handleNewProject()
   } else {
@@ -189,16 +189,16 @@ const initProject = async () => {
 const handleNewProject = async () => {
   const pending = getPendingUpload()
   if (!pending.isPending || pending.files.length === 0) {
-    error.value = 'No pending files found.'
-    addLog('Error: No pending files found for new project.')
+    error.value = '대기 중인 파일을 찾을 수 없습니다. /process/new 페이지를 새로고침한 경우 홈에서 파일을 다시 선택해야 합니다.'
+    addLog('오류: 새 프로젝트에 사용할 대기 파일이 없습니다. 업로드 파일은 메모리에만 저장되므로 새로고침 후에는 홈에서 다시 선택해야 합니다.')
     return
   }
   
   try {
     loading.value = true
     currentPhase.value = 0
-    ontologyProgress.value = { message: 'Uploading and analyzing docs...' }
-    addLog('Starting ontology generation: Uploading files...')
+    ontologyProgress.value = { message: '문서를 업로드하고 분석하는 중...' }
+    addLog('온톨로지 생성을 시작합니다: 파일 업로드 중...')
     
     const formData = new FormData()
     pending.files.forEach(f => formData.append('files', f))
@@ -212,15 +212,15 @@ const handleNewProject = async () => {
       
       router.replace({ name: 'Process', params: { projectId: res.data.project_id } })
       ontologyProgress.value = null
-      addLog(`Ontology generated successfully for project ${res.data.project_id}`)
+      addLog(`프로젝트 ${res.data.project_id}의 온톨로지 생성이 완료되었습니다.`)
       await startBuildGraph()
     } else {
-      error.value = res.error || 'Ontology generation failed'
-      addLog(`Error generating ontology: ${error.value}`)
+      error.value = res.error || '온톨로지 생성에 실패했습니다.'
+      addLog(`온톨로지 생성 오류: ${error.value}`)
     }
   } catch (err) {
     error.value = err.message
-    addLog(`Exception in handleNewProject: ${err.message}`)
+    addLog(`새 프로젝트 처리 중 예외가 발생했습니다: ${err.message}`)
   } finally {
     loading.value = false
   }
@@ -229,12 +229,12 @@ const handleNewProject = async () => {
 const loadProject = async () => {
   try {
     loading.value = true
-    addLog(`Loading project ${currentProjectId.value}...`)
+    addLog(`프로젝트 ${currentProjectId.value}를 불러오는 중...`)
     const res = await getProject(currentProjectId.value)
     if (res.success) {
       projectData.value = res.data
       updatePhaseByStatus(res.data.status)
-      addLog(`Project loaded. Status: ${res.data.status}`)
+      addLog(`프로젝트를 불러왔습니다. 상태: ${res.data.status}`)
       
       if (res.data.status === 'ontology_generated' && !res.data.graph_id) {
         await startBuildGraph()
@@ -248,11 +248,11 @@ const loadProject = async () => {
       }
     } else {
       error.value = res.error
-      addLog(`Error loading project: ${res.error}`)
+      addLog(`프로젝트 불러오기 오류: ${res.error}`)
     }
   } catch (err) {
     error.value = err.message
-    addLog(`Exception in loadProject: ${err.message}`)
+    addLog(`프로젝트 불러오기 중 예외가 발생했습니다: ${err.message}`)
   } finally {
     loading.value = false
   }
@@ -264,33 +264,33 @@ const updatePhaseByStatus = (status) => {
     case 'ontology_generated': currentPhase.value = 0; break;
     case 'graph_building': currentPhase.value = 1; break;
     case 'graph_completed': currentPhase.value = 2; break;
-    case 'failed': error.value = 'Project failed'; break;
+    case 'failed': error.value = '프로젝트 처리에 실패했습니다.'; break;
   }
 }
 
 const startBuildGraph = async () => {
   try {
     currentPhase.value = 1
-    buildProgress.value = { progress: 0, message: 'Starting build...' }
-    addLog('Initiating graph build...')
+    buildProgress.value = { progress: 0, message: '그래프 구축을 시작하는 중...' }
+    addLog('그래프 구축을 시작합니다...')
     
     const res = await buildGraph({ project_id: currentProjectId.value })
     if (res.success) {
-      addLog(`Graph build task started. Task ID: ${res.data.task_id}`)
+      addLog(`그래프 구축 작업이 시작되었습니다. 작업 ID: ${res.data.task_id}`)
       startGraphPolling()
       startPollingTask(res.data.task_id)
     } else {
       error.value = res.error
-      addLog(`Error starting build: ${res.error}`)
+      addLog(`구축 시작 오류: ${res.error}`)
     }
   } catch (err) {
     error.value = err.message
-    addLog(`Exception in startBuildGraph: ${err.message}`)
+    addLog(`그래프 구축 시작 중 예외가 발생했습니다: ${err.message}`)
   }
 }
 
 const startGraphPolling = () => {
-  addLog('Started polling for graph data...')
+  addLog('그래프 데이터 폴링을 시작했습니다...')
   fetchGraphData()
   graphPollTimer = setInterval(fetchGraphData, 10000)
 }
@@ -305,11 +305,11 @@ const fetchGraphData = async () => {
         graphData.value = gRes.data
         const nodeCount = gRes.data.node_count || gRes.data.nodes?.length || 0
         const edgeCount = gRes.data.edge_count || gRes.data.edges?.length || 0
-        addLog(`Graph data refreshed. Nodes: ${nodeCount}, Edges: ${edgeCount}`)
+        addLog(`그래프 데이터를 새로고침했습니다. 노드: ${nodeCount}, 엣지: ${edgeCount}`)
       }
     }
   } catch (err) {
-    console.warn('Graph fetch error:', err)
+    console.warn('그래프 가져오기 오류:', err)
   }
 }
 
@@ -332,7 +332,7 @@ const pollTaskStatus = async (taskId) => {
       buildProgress.value = { progress: task.progress || 0, message: task.message }
       
       if (task.status === 'completed') {
-        addLog('Graph build task completed.')
+        addLog('그래프 구축 작업이 완료되었습니다.')
         stopPolling()
         stopGraphPolling() // Stop polling, do final load
         currentPhase.value = 2
@@ -346,7 +346,7 @@ const pollTaskStatus = async (taskId) => {
       } else if (task.status === 'failed') {
         stopPolling()
         error.value = task.error
-        addLog(`Graph build task failed: ${task.error}`)
+        addLog(`그래프 구축 작업 실패: ${task.error}`)
       }
     }
   } catch (e) {
@@ -356,17 +356,17 @@ const pollTaskStatus = async (taskId) => {
 
 const loadGraph = async (graphId) => {
   graphLoading.value = true
-  addLog(`Loading full graph data: ${graphId}`)
+  addLog(`전체 그래프 데이터를 불러오는 중: ${graphId}`)
   try {
     const res = await getGraphData(graphId)
     if (res.success) {
       graphData.value = res.data
-      addLog('Graph data loaded successfully.')
+      addLog('그래프 데이터를 성공적으로 불러왔습니다.')
     } else {
-      addLog(`Failed to load graph data: ${res.error}`)
+      addLog(`그래프 데이터 불러오기 실패: ${res.error}`)
     }
   } catch (e) {
-    addLog(`Exception loading graph: ${e.message}`)
+    addLog(`그래프 불러오기 중 예외가 발생했습니다: ${e.message}`)
   } finally {
     graphLoading.value = false
   }
@@ -374,7 +374,7 @@ const loadGraph = async (graphId) => {
 
 const refreshGraph = () => {
   if (projectData.value?.graph_id) {
-    addLog('Manual graph refresh triggered.')
+    addLog('수동 그래프 새로고침을 실행했습니다.')
     loadGraph(projectData.value.graph_id)
   }
 }
@@ -390,7 +390,7 @@ const stopGraphPolling = () => {
   if (graphPollTimer) {
     clearInterval(graphPollTimer)
     graphPollTimer = null
-    addLog('Graph polling stopped.')
+    addLog('그래프 폴링을 중지했습니다.')
   }
 }
 

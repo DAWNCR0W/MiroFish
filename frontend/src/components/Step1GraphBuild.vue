@@ -1,37 +1,37 @@
 <template>
   <div class="workbench-panel">
     <div class="scroll-container">
-      <!-- Step 01: Ontology -->
+      <!-- 1단계: 온톨로지 -->
       <div class="step-card" :class="{ 'active': currentPhase === 0, 'completed': currentPhase > 0 }">
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">01</span>
-            <span class="step-title">本体生成</span>
+            <span class="step-title">온톨로지 생성</span>
           </div>
           <div class="step-status">
-            <span v-if="currentPhase > 0" class="badge success">已完成</span>
-            <span v-else-if="currentPhase === 0" class="badge processing">生成中</span>
-            <span v-else class="badge pending">等待</span>
+            <span v-if="currentPhase > 0" class="badge success">완료</span>
+            <span v-else-if="currentPhase === 0" class="badge processing">생성 중</span>
+            <span v-else class="badge pending">대기 중</span>
           </div>
         </div>
         
         <div class="card-content">
           <p class="api-note">POST /api/graph/ontology/generate</p>
           <p class="description">
-            LLM分析文档内容与模拟需求，提取出现实种子，自动生成合适的本体结构
+            LLM이 문서 내용과 시뮬레이션 요구사항을 분석해 현실 시드를 추출하고, 적절한 온톨로지 구조를 자동 생성합니다.
           </p>
 
-          <!-- Loading / Progress -->
+          <!-- 로딩 / 진행률 -->
           <div v-if="currentPhase === 0 && ontologyProgress" class="progress-section">
             <div class="spinner-sm"></div>
-            <span>{{ ontologyProgress.message || '正在分析文档...' }}</span>
+            <span>{{ ontologyProgress.message || '문서를 분석하는 중...' }}</span>
           </div>
 
-          <!-- Detail Overlay -->
+          <!-- 상세 오버레이 -->
           <div v-if="selectedOntologyItem" class="ontology-detail-overlay">
             <div class="detail-header">
                <div class="detail-title-group">
-                  <span class="detail-type-badge">{{ selectedOntologyItem.itemType === 'entity' ? 'ENTITY' : 'RELATION' }}</span>
+                  <span class="detail-type-badge">{{ selectedOntologyItem.itemType === 'entity' ? '엔티티' : '관계' }}</span>
                   <span class="detail-name">{{ selectedOntologyItem.name }}</span>
                </div>
                <button class="close-btn" @click="selectedOntologyItem = null">×</button>
@@ -39,9 +39,9 @@
             <div class="detail-body">
                <div class="detail-desc">{{ selectedOntologyItem.description }}</div>
                
-               <!-- Attributes -->
+               <!-- 속성 -->
                <div class="detail-section" v-if="selectedOntologyItem.attributes?.length">
-                  <span class="section-label">ATTRIBUTES</span>
+                  <span class="section-label">속성</span>
                   <div class="attr-list">
                      <div v-for="attr in selectedOntologyItem.attributes" :key="attr.name" class="attr-item">
                         <span class="attr-name">{{ attr.name }}</span>
@@ -51,17 +51,17 @@
                   </div>
                </div>
 
-               <!-- Examples (Entity) -->
+               <!-- 예시(엔티티) -->
                <div class="detail-section" v-if="selectedOntologyItem.examples?.length">
-                  <span class="section-label">EXAMPLES</span>
+                  <span class="section-label">예시</span>
                   <div class="example-list">
                      <span v-for="ex in selectedOntologyItem.examples" :key="ex" class="example-tag">{{ ex }}</span>
                   </div>
                </div>
 
-               <!-- Source/Target (Relation) -->
+               <!-- 출발지/도착지(관계) -->
                <div class="detail-section" v-if="selectedOntologyItem.source_targets?.length">
-                  <span class="section-label">CONNECTIONS</span>
+                  <span class="section-label">연결 관계</span>
                   <div class="conn-list">
                      <div v-for="(conn, idx) in selectedOntologyItem.source_targets" :key="idx" class="conn-item">
                         <span class="conn-node">{{ conn.source }}</span>
@@ -73,9 +73,9 @@
             </div>
           </div>
 
-          <!-- Generated Entity Tags -->
+          <!-- 생성된 엔티티 태그 -->
           <div v-if="projectData?.ontology?.entity_types" class="tags-container" :class="{ 'dimmed': selectedOntologyItem }">
-            <span class="tag-label">GENERATED ENTITY TYPES</span>
+            <span class="tag-label">생성된 엔티티 유형</span>
             <div class="tags-list">
               <span 
                 v-for="entity in projectData.ontology.entity_types" 
@@ -88,9 +88,9 @@
             </div>
           </div>
 
-          <!-- Generated Relation Tags -->
+          <!-- 생성된 관계 태그 -->
           <div v-if="projectData?.ontology?.edge_types" class="tags-container" :class="{ 'dimmed': selectedOntologyItem }">
-            <span class="tag-label">GENERATED RELATION TYPES</span>
+            <span class="tag-label">생성된 관계 유형</span>
             <div class="tags-list">
               <span 
                 v-for="rel in projectData.ontology.edge_types" 
@@ -105,76 +105,76 @@
         </div>
       </div>
 
-      <!-- Step 02: Graph Build -->
+      <!-- 2단계: 그래프 구축 -->
       <div class="step-card" :class="{ 'active': currentPhase === 1, 'completed': currentPhase > 1 }">
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">02</span>
-            <span class="step-title">GraphRAG构建</span>
+            <span class="step-title">GraphRAG 구축</span>
           </div>
           <div class="step-status">
-            <span v-if="currentPhase > 1" class="badge success">已完成</span>
+            <span v-if="currentPhase > 1" class="badge success">완료</span>
             <span v-else-if="currentPhase === 1" class="badge processing">{{ buildProgress?.progress || 0 }}%</span>
-            <span v-else class="badge pending">等待</span>
+            <span v-else class="badge pending">대기 중</span>
           </div>
         </div>
 
         <div class="card-content">
           <p class="api-note">POST /api/graph/build</p>
           <p class="description">
-            基于生成的本体，将文档自动分块后调用 Zep 构建知识图谱，提取实体和关系，并形成时序记忆与社区摘要
+            생성된 온톨로지를 바탕으로 문서를 자동 분할한 뒤 로컬 그래프 저장소에 기록해 엔티티와 관계를 추출하고, 시계열 기억과 커뮤니티 요약을 형성합니다.
           </p>
           
-          <!-- Stats Cards -->
+          <!-- 통계 카드 -->
           <div class="stats-grid">
             <div class="stat-card">
               <span class="stat-value">{{ graphStats.nodes }}</span>
-              <span class="stat-label">实体节点</span>
+              <span class="stat-label">엔티티 노드</span>
             </div>
             <div class="stat-card">
               <span class="stat-value">{{ graphStats.edges }}</span>
-              <span class="stat-label">关系边</span>
+              <span class="stat-label">관계 간선</span>
             </div>
             <div class="stat-card">
               <span class="stat-value">{{ graphStats.types }}</span>
-              <span class="stat-label">SCHEMA类型</span>
+              <span class="stat-label">스키마 유형</span>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Step 03: Complete -->
+      <!-- 3단계: 완료 -->
       <div class="step-card" :class="{ 'active': currentPhase === 2, 'completed': currentPhase >= 2 }">
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">03</span>
-            <span class="step-title">构建完成</span>
+            <span class="step-title">구축 완료</span>
           </div>
           <div class="step-status">
-            <span v-if="currentPhase >= 2" class="badge accent">进行中</span>
+            <span v-if="currentPhase >= 2" class="badge accent">준비 완료</span>
           </div>
         </div>
         
         <div class="card-content">
           <p class="api-note">POST /api/simulation/create</p>
-          <p class="description">图谱构建已完成，请进入下一步进行模拟环境搭建</p>
+          <p class="description">그래프 구축이 완료되었습니다. 다음 단계로 이동해 시뮬레이션 환경을 설정하세요.</p>
           <button 
             class="action-btn" 
             :disabled="currentPhase < 2 || creatingSimulation"
             @click="handleEnterEnvSetup"
           >
             <span v-if="creatingSimulation" class="spinner-sm"></span>
-            {{ creatingSimulation ? '创建中...' : '进入环境搭建 ➝' }}
+            {{ creatingSimulation ? '생성 중...' : '환경 설정으로 이동 ➝' }}
           </button>
         </div>
       </div>
     </div>
 
-    <!-- Bottom Info / Logs -->
+    <!-- 하단 정보 / 로그 -->
     <div class="system-logs">
       <div class="log-header">
-        <span class="log-title">SYSTEM DASHBOARD</span>
-        <span class="log-id">{{ projectData?.project_id || 'NO_PROJECT' }}</span>
+        <span class="log-title">시스템 대시보드</span>
+        <span class="log-id">{{ projectData?.project_id || '프로젝트 없음' }}</span>
       </div>
       <div class="log-content" ref="logContent">
         <div class="log-line" v-for="(log, idx) in systemLogs" :key="idx">
@@ -208,10 +208,10 @@ const selectedOntologyItem = ref(null)
 const logContent = ref(null)
 const creatingSimulation = ref(false)
 
-// 进入环境搭建 - 创建 simulation 并跳转
+// 환경 설정으로 이동합니다 - simulation을 생성하고 전환합니다
 const handleEnterEnvSetup = async () => {
   if (!props.projectData?.project_id || !props.projectData?.graph_id) {
-    console.error('缺少项目或图谱信息')
+    console.error('프로젝트 또는 그래프 정보가 없습니다')
     return
   }
   
@@ -226,18 +226,18 @@ const handleEnterEnvSetup = async () => {
     })
     
     if (res.success && res.data?.simulation_id) {
-      // 跳转到 simulation 页面
+      // simulation 페이지로 이동합니다
       router.push({
         name: 'Simulation',
         params: { simulationId: res.data.simulation_id }
       })
     } else {
-      console.error('创建模拟失败:', res.error)
-      alert('创建模拟失败: ' + (res.error || '未知错误'))
+      console.error('시뮬레이션 생성 실패:', res.error)
+      alert('시뮬레이션 생성 실패: ' + (res.error || '알 수 없는 오류'))
     }
   } catch (err) {
-    console.error('创建模拟异常:', err)
-    alert('创建模拟异常: ' + err.message)
+    console.error('시뮬레이션 생성 중 예외 발생:', err)
+    alert('시뮬레이션 생성 중 예외 발생: ' + err.message)
   } finally {
     creatingSimulation.value = false
   }
@@ -257,7 +257,7 @@ const graphStats = computed(() => {
 const formatDate = (dateStr) => {
   if (!dateStr) return '--:--:--'
   const d = new Date(dateStr)
-  return d.toLocaleTimeString('en-US', { hour12: false }) + '.' + d.getMilliseconds()
+  return d.toLocaleTimeString('ko-KR', { hour12: false }) + '.' + d.getMilliseconds()
 }
 
 // Auto-scroll logs

@@ -1,14 +1,14 @@
 <template>
   <div class="report-panel">
-    <!-- Main Split Layout -->
+    <!-- 메인 분할 레이아웃 -->
     <div class="main-split-layout">
-      <!-- LEFT PANEL: Report Style -->
+      <!-- 왼쪽 패널: 보고서 스타일 -->
       <div class="left-panel report-style" ref="leftPanel">
         <div v-if="reportOutline" class="report-content-wrapper">
-          <!-- Report Header -->
+          <!-- 보고서 헤더 -->
           <div class="report-header-block">
             <div class="report-meta">
-              <span class="report-tag">Prediction Report</span>
+              <span class="report-tag">예측 보고서</span>
               <span class="report-id">ID: {{ reportId || 'REF-2024-X92' }}</span>
             </div>
             <h1 class="main-title">{{ reportOutline.title }}</h1>
@@ -16,13 +16,13 @@
             <div class="header-divider"></div>
           </div>
 
-          <!-- Sections List -->
+          <!-- 섹션 목록 -->
           <div class="sections-list">
-            <div 
-              v-for="(section, idx) in reportOutline.sections" 
+            <div
+              v-for="(section, idx) in reportOutline.sections"
               :key="idx"
               class="report-section-item"
-              :class="{ 
+              :class="{
                 'is-active': currentSectionIndex === idx + 1,
                 'is-completed': isSectionCompleted(idx + 1),
                 'is-pending': !isSectionCompleted(idx + 1) && currentSectionIndex !== idx + 1
@@ -31,26 +31,26 @@
               <div class="section-header-row" @click="toggleSectionCollapse(idx)" :class="{ 'clickable': isSectionCompleted(idx + 1) }">
                 <span class="section-number">{{ String(idx + 1).padStart(2, '0') }}</span>
                 <h3 class="section-title">{{ section.title }}</h3>
-                <svg 
-                  v-if="isSectionCompleted(idx + 1)" 
-                  class="collapse-icon" 
+                <svg
+                  v-if="isSectionCompleted(idx + 1)"
+                  class="collapse-icon"
                   :class="{ 'is-collapsed': collapsedSections.has(idx) }"
-                  viewBox="0 0 24 24" 
-                  width="20" 
-                  height="20" 
-                  fill="none" 
-                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                  width="20"
+                  height="20"
+                  fill="none"
+                  stroke="currentColor"
                   stroke-width="2"
                 >
                   <polyline points="6 9 12 15 18 9"></polyline>
                 </svg>
               </div>
-              
+
               <div class="section-body" v-show="!collapsedSections.has(idx)">
-                <!-- Completed Content -->
+                <!-- 완료 콘텐츠 -->
                 <div v-if="generatedSections[idx + 1]" class="generated-content" v-html="renderMarkdown(generatedSections[idx + 1])"></div>
-                
-                <!-- Loading State -->
+
+                <!-- 로딩 상태 -->
                 <div v-else-if="currentSectionIndex === idx + 1" class="loading-state">
                   <div class="loading-icon">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -58,25 +58,25 @@
                       <path d="M12 2a10 10 0 0 1 10 10" stroke-width="4" stroke="#4B5563" stroke-linecap="round"></path>
                     </svg>
                   </div>
-                  <span class="loading-text">正在生成{{ section.title }}...</span>
+                  <span class="loading-text">{{ section.title }} 생성 중...</span>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Waiting State -->
+        <!-- 대기 상태 -->
         <div v-if="!reportOutline" class="waiting-placeholder">
           <div class="waiting-animation">
             <div class="waiting-ring"></div>
             <div class="waiting-ring"></div>
             <div class="waiting-ring"></div>
           </div>
-          <span class="waiting-text">Waiting for Report Agent...</span>
+          <span class="waiting-text">보고서 에이전트를 기다리는 중...</span>
         </div>
       </div>
 
-      <!-- RIGHT PANEL: Workflow Timeline -->
+      <!-- 오른쪽 패널: 워크플로 타임라인 -->
       <div class="right-panel" ref="rightPanel">
         <div class="panel-header" :class="`panel-header--${activeStep.status}`" v-if="!isComplete">
           <span class="header-dot" v-if="activeStep.status === 'active'"></span>
@@ -85,19 +85,19 @@
           <span class="header-meta mono" v-if="activeStep.meta">{{ activeStep.meta }}</span>
         </div>
 
-        <!-- Workflow Overview (flat, status-based palette) -->
+        <!-- 워크플로 개요(평평한 상태 기반 팔레트) -->
         <div class="workflow-overview" v-if="agentLogs.length > 0 || reportOutline">
           <div class="workflow-metrics">
             <div class="metric">
-              <span class="metric-label">Sections</span>
+              <span class="metric-label">섹션</span>
               <span class="metric-value mono">{{ completedSections }}/{{ totalSections }}</span>
             </div>
             <div class="metric">
-              <span class="metric-label">Elapsed</span>
+              <span class="metric-label">경과 시간</span>
               <span class="metric-value mono">{{ formatElapsedTime }}</span>
             </div>
             <div class="metric">
-              <span class="metric-label">Tools</span>
+              <span class="metric-label">도구</span>
               <span class="metric-value mono">{{ totalToolCalls }}</span>
             </div>
             <div class="metric metric-right">
@@ -127,9 +127,9 @@
             </div>
           </div>
 
-          <!-- Next Step Button - 在完成后显示 -->
+          <!-- 다음 단계 버튼 - 완료 후 표시 -->
           <button v-if="isComplete" class="next-step-btn" @click="goToInteraction">
-            <span>进入深度互动</span>
+            <span>심층 상호작용으로 이동</span>
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="5" y1="12" x2="19" y2="12"></line>
               <polyline points="12 5 19 12 12 19"></polyline>
@@ -141,60 +141,60 @@
 
         <div class="workflow-timeline">
           <TransitionGroup name="timeline-item">
-            <div 
-              v-for="(log, idx) in displayLogs" 
+            <div
+              v-for="(log, idx) in displayLogs"
               :key="log.timestamp + '-' + idx"
               class="timeline-item"
               :class="getTimelineItemClass(log, idx, displayLogs.length)"
             >
-              <!-- Timeline Connector -->
+              <!-- 타임라인 연결선 -->
               <div class="timeline-connector">
                 <div class="connector-dot" :class="getConnectorClass(log, idx, displayLogs.length)"></div>
                 <div class="connector-line" v-if="idx < displayLogs.length - 1"></div>
               </div>
-              
-              <!-- Timeline Content -->
+
+              <!-- 타임라인 내용 -->
               <div class="timeline-content">
                 <div class="timeline-header">
                   <span class="action-label">{{ getActionLabel(log.action) }}</span>
                   <span class="action-time">{{ formatTime(log.timestamp) }}</span>
                 </div>
-                
-                <!-- Action Body - Different for each type -->
+
+                <!-- 동작 본문 - 유형별로 다름 -->
                 <div class="timeline-body" :class="{ 'collapsed': isLogCollapsed(log) }" @click="toggleLogExpand(log)">
-                  
-                  <!-- Report Start -->
+
+                  <!-- 보고서 시작 -->
                   <template v-if="log.action === 'report_start'">
                     <div class="info-row">
-                      <span class="info-key">Simulation</span>
+                      <span class="info-key">시뮬레이션</span>
                       <span class="info-val mono">{{ log.details?.simulation_id }}</span>
                     </div>
                     <div class="info-row" v-if="log.details?.simulation_requirement">
-                      <span class="info-key">Requirement</span>
+                      <span class="info-key">요구사항</span>
                       <span class="info-val">{{ log.details.simulation_requirement }}</span>
                     </div>
                   </template>
 
-                  <!-- Planning -->
+                  <!-- 기획 -->
                   <template v-if="log.action === 'planning_start'">
                     <div class="status-message planning">{{ log.details?.message }}</div>
                   </template>
                   <template v-if="log.action === 'planning_complete'">
                     <div class="status-message success">{{ log.details?.message }}</div>
                     <div class="outline-badge" v-if="log.details?.outline">
-                      {{ log.details.outline.sections?.length || 0 }} sections planned
+                      {{ log.details.outline.sections?.length || 0 }} 섹션이 기획됨
                     </div>
                   </template>
 
-                  <!-- Section Start -->
+                  <!-- 섹션 시작 -->
                   <template v-if="log.action === 'section_start'">
                     <div class="section-tag">
                       <span class="tag-num">#{{ log.section_index }}</span>
                       <span class="tag-title">{{ log.section_title }}</span>
                     </div>
                   </template>
-                  
-                  <!-- Section Content Generated (内容生成完成，但整个章节可能还没完成) -->
+
+                  <!-- 섹션 콘텐츠 생성 완료(내용은 생성됐지만 전체 장은 아직 완료되지 않았을 수 있음) -->
                   <template v-if="log.action === 'section_content'">
                     <div class="section-tag content-ready">
                       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
@@ -205,7 +205,7 @@
                     </div>
                   </template>
 
-                  <!-- Section Complete (章节生成完成) -->
+                  <!-- 섹션 완료 -->
                   <template v-if="log.action === 'section_complete'">
                     <div class="section-tag completed">
                       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
@@ -215,41 +215,41 @@
                     </div>
                   </template>
 
-                  <!-- Tool Call -->
+                  <!-- 도구 호출 -->
                   <template v-if="log.action === 'tool_call'">
                     <div class="tool-badge" :class="'tool-' + getToolColor(log.details?.tool_name)">
-                      <!-- Deep Insight - Lightbulb -->
+                      <!-- 심층 분석 - 전구 -->
                       <svg v-if="getToolIcon(log.details?.tool_name) === 'lightbulb'" class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.5V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.5A7 7 0 0 0 12 2z"></path>
                       </svg>
-                      <!-- Panorama Search - Globe -->
+                      <!-- 전방위 검색 - 지구본 -->
                       <svg v-else-if="getToolIcon(log.details?.tool_name) === 'globe'" class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"></circle>
                         <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
                       </svg>
-                      <!-- Agent Interview - Users -->
+                      <!-- 에이전트 인터뷰 - 사용자 -->
                       <svg v-else-if="getToolIcon(log.details?.tool_name) === 'users'" class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
                         <circle cx="9" cy="7" r="4"></circle>
                         <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path>
                       </svg>
-                      <!-- Quick Search - Zap -->
+                      <!-- 빠른 검색 - 번개 -->
                       <svg v-else-if="getToolIcon(log.details?.tool_name) === 'zap'" class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                         <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
                       </svg>
-                      <!-- Graph Stats - Chart -->
+                      <!-- 그래프 통계 - 차트 -->
                       <svg v-else-if="getToolIcon(log.details?.tool_name) === 'chart'" class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="20" x2="18" y2="10"></line>
                         <line x1="12" y1="20" x2="12" y2="4"></line>
                         <line x1="6" y1="20" x2="6" y2="14"></line>
                       </svg>
-                      <!-- Entity Query - Database -->
+                      <!-- 엔티티 조회 - 데이터베이스 -->
                       <svg v-else-if="getToolIcon(log.details?.tool_name) === 'database'" class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                         <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
                         <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
                         <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
                       </svg>
-                      <!-- Default - Tool -->
+                      <!-- 기본 도구 -->
                       <svg v-else class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
                       </svg>
@@ -260,104 +260,104 @@
                     </div>
                   </template>
 
-                  <!-- Tool Result -->
+                  <!-- 도구 결과 -->
                   <template v-if="log.action === 'tool_result'">
                     <div class="result-wrapper" :class="'result-' + log.details?.tool_name">
-                      <!-- Hide result-meta for tools that show stats in their own header -->
+                  <!-- 자체 헤더에 통계를 표시하는 도구는 result-meta를 숨깁니다 -->
                       <div v-if="!['interview_agents', 'insight_forge', 'panorama_search', 'quick_search'].includes(log.details?.tool_name)" class="result-meta">
                         <span class="result-tool">{{ getToolDisplayName(log.details?.tool_name) }}</span>
                         <span class="result-size">{{ formatResultSize(log.details?.result_length) }}</span>
                       </div>
-                      
-                      <!-- Structured Result Display -->
+
+                      <!-- 구조화된 결과 표시 -->
                       <div v-if="!showRawResult[log.timestamp]" class="result-structured">
-                        <!-- Interview Agents - Special Display -->
+                        <!-- 인터뷰 에이전트 - 특수 표시 -->
                         <template v-if="log.details?.tool_name === 'interview_agents'">
                           <InterviewDisplay :result="parseInterview(log.details.result)" :result-length="log.details?.result_length" />
                         </template>
-                        
-                        <!-- Insight Forge -->
+
+                        <!-- 인사이트 포지 -->
                         <template v-else-if="log.details?.tool_name === 'insight_forge'">
                           <InsightDisplay :result="parseInsightForge(log.details.result)" :result-length="log.details?.result_length" />
                         </template>
-                        
-                        <!-- Panorama Search -->
+
+                        <!-- 전방위 검색 -->
                         <template v-else-if="log.details?.tool_name === 'panorama_search'">
                           <PanoramaDisplay :result="parsePanorama(log.details.result)" :result-length="log.details?.result_length" />
                         </template>
-                        
-                        <!-- Quick Search -->
+
+                        <!-- 빠른 검색 -->
                         <template v-else-if="log.details?.tool_name === 'quick_search'">
                           <QuickSearchDisplay :result="parseQuickSearch(log.details.result)" :result-length="log.details?.result_length" />
                         </template>
-                        
-                        <!-- Default -->
+
+                        <!-- 기본 -->
                         <template v-else>
                           <pre class="raw-preview">{{ truncateText(log.details?.result, 300) }}</pre>
                         </template>
                       </div>
-                      
-                      <!-- Raw Result -->
+
+                      <!-- 원시 결과 -->
                       <div v-else class="result-raw">
                         <pre>{{ log.details?.result }}</pre>
                       </div>
                     </div>
                   </template>
 
-                  <!-- LLM Response -->
+                  <!-- LLM 응답 -->
                   <template v-if="log.action === 'llm_response'">
                     <div class="llm-meta">
-                      <span class="meta-tag">Iteration {{ log.details?.iteration }}</span>
+                      <span class="meta-tag">회차 {{ log.details?.iteration }}</span>
                       <span class="meta-tag" :class="{ active: log.details?.has_tool_calls }">
-                        Tools: {{ log.details?.has_tool_calls ? 'Yes' : 'No' }}
+                        도구: {{ log.details?.has_tool_calls ? '있음' : '없음' }}
                       </span>
                       <span class="meta-tag" :class="{ active: log.details?.has_final_answer, 'final-answer': log.details?.has_final_answer }">
-                        Final: {{ log.details?.has_final_answer ? 'Yes' : 'No' }}
+                        최종 답변: {{ log.details?.has_final_answer ? '있음' : '없음' }}
                       </span>
                     </div>
-                    <!-- 当是最终答案时，显示特殊提示 -->
+                    <!-- 최종 답변일 때 특수 안내를 표시합니다 -->
                     <div v-if="log.details?.has_final_answer" class="final-answer-hint">
                       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="20 6 9 17 4 12"></polyline>
                       </svg>
-                      <span>Section "{{ log.section_title }}" content generated</span>
+                      <span>섹션 "{{ log.section_title }}" 내용이 생성되었습니다</span>
                     </div>
                     <div v-if="expandedLogs.has(log.timestamp) && log.details?.response" class="llm-content">
                       <pre>{{ log.details.response }}</pre>
                     </div>
                   </template>
 
-                  <!-- Report Complete -->
+                  <!-- 보고서 완료 -->
                   <template v-if="log.action === 'report_complete'">
                     <div class="complete-banner">
                       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                         <polyline points="22 4 12 14.01 9 11.01"></polyline>
                       </svg>
-                      <span>Report Generation Complete</span>
+                      <span>보고서 생성 완료</span>
                     </div>
                   </template>
                 </div>
 
-                <!-- Footer: Elapsed Time + Action Buttons -->
+                <!-- 푸터: 경과 시간 + 동작 버튼 -->
                 <div class="timeline-footer" v-if="log.elapsed_seconds || (log.action === 'tool_call' && log.details?.parameters) || log.action === 'tool_result' || (log.action === 'llm_response' && log.details?.response)">
                   <span v-if="log.elapsed_seconds" class="elapsed-badge">+{{ log.elapsed_seconds.toFixed(1) }}s</span>
                   <span v-else class="elapsed-placeholder"></span>
-                  
+
                   <div class="footer-actions">
-                    <!-- Tool Call: Show/Hide Params -->
+                    <!-- 도구 호출: 매개변수 표시/숨기기 -->
                     <button v-if="log.action === 'tool_call' && log.details?.parameters" class="action-btn" @click.stop="toggleLogExpand(log)">
-                      {{ expandedLogs.has(log.timestamp) ? 'Hide Params' : 'Show Params' }}
+                      {{ expandedLogs.has(log.timestamp) ? '매개변수 숨기기' : '매개변수 보기' }}
                     </button>
-                    
-                    <!-- Tool Result: Raw/Structured View -->
+
+                    <!-- 도구 결과: 원시/구조화 보기 -->
                     <button v-if="log.action === 'tool_result'" class="action-btn" @click.stop="toggleRawResult(log.timestamp, $event)">
-                      {{ showRawResult[log.timestamp] ? 'Structured View' : 'Raw Output' }}
+                      {{ showRawResult[log.timestamp] ? '구조화 보기' : '원시 출력' }}
                     </button>
-                    
-                    <!-- LLM Response: Show/Hide Response -->
+
+                    <!-- LLM 응답: 응답 표시/숨기기 -->
                     <button v-if="log.action === 'llm_response' && log.details?.response" class="action-btn" @click.stop="toggleLogExpand(log)">
-                      {{ expandedLogs.has(log.timestamp) ? 'Hide Response' : 'Show Response' }}
+                      {{ expandedLogs.has(log.timestamp) ? '응답 숨기기' : '응답 보기' }}
                     </button>
                   </div>
                 </div>
@@ -365,20 +365,20 @@
             </div>
           </TransitionGroup>
 
-          <!-- Empty State -->
+          <!-- 빈 상태 -->
           <div v-if="agentLogs.length === 0 && !isComplete" class="workflow-empty">
             <div class="empty-pulse"></div>
-            <span>Waiting for agent activity...</span>
+            <span>에이전트 활동을 기다리는 중...</span>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Bottom Console Logs -->
+    <!-- 하단 콘솔 로그 -->
     <div class="console-logs">
       <div class="log-header">
-        <span class="log-title">CONSOLE OUTPUT</span>
-        <span class="log-id">{{ reportId || 'NO_REPORT' }}</span>
+        <span class="log-title">콘솔 출력</span>
+        <span class="log-id">{{ reportId || '보고서 없음' }}</span>
       </div>
       <div class="log-content" ref="logContent">
         <div class="log-line" v-for="(log, idx) in consoleLogs" :key="idx">
@@ -404,14 +404,14 @@ const props = defineProps({
 
 const emit = defineEmits(['add-log', 'update-status'])
 
-// Navigation
+// 이동
 const goToInteraction = () => {
   if (props.reportId) {
     router.push({ name: 'Interaction', params: { reportId: props.reportId } })
   }
 }
 
-// State
+// 상태
 const agentLogs = ref([])
 const consoleLogs = ref([])
 const agentLogLine = ref(0)
@@ -429,24 +429,24 @@ const rightPanel = ref(null)
 const logContent = ref(null)
 const showRawResult = reactive({})
 
-// Toggle functions
+// 토글 함수
 const toggleRawResult = (timestamp, event) => {
-  // 保存按钮相对于视口的位置
+  // 버튼의 뷰포트 상대 위치를 저장합니다
   const button = event?.target
   const buttonRect = button?.getBoundingClientRect()
   const buttonTopBeforeToggle = buttonRect?.top
-  
-  // 切换状态
+
+  // 상태를 전환합니다
   showRawResult[timestamp] = !showRawResult[timestamp]
-  
-  // 等待 DOM 更新后，调整滚动位置以保持按钮在相同位置
+
+  // DOM 업데이트를 기다린 뒤 버튼이 같은 위치에 보이도록 스크롤을 조정합니다
   if (button && buttonTopBeforeToggle !== undefined && rightPanel.value) {
     nextTick(() => {
       const newButtonRect = button.getBoundingClientRect()
       const buttonTopAfterToggle = newButtonRect.top
       const scrollDelta = buttonTopAfterToggle - buttonTopBeforeToggle
-      
-      // 调整滚动位置
+
+      // 스크롤 위치를 조정합니다
       rightPanel.value.scrollTop += scrollDelta
     })
   }
@@ -464,7 +464,7 @@ const toggleSectionContent = (idx) => {
 }
 
 const toggleSectionCollapse = (idx) => {
-  // 只有已完成的章节才能折叠
+  // 완료된 섹션만 접을 수 있습니다
   if (!generatedSections.value[idx + 1]) return
   const newSet = new Set(collapsedSections.value)
   if (newSet.has(idx)) {
@@ -492,37 +492,37 @@ const isLogCollapsed = (log) => {
   return false
 }
 
-// Tool configurations with display names and colors
+// 표시 이름과 색상을 포함한 도구 설정
 const toolConfig = {
   'insight_forge': {
-    name: 'Deep Insight',
+    name: '심층 분석',
     color: 'purple',
-    icon: 'lightbulb' // 灯泡图标 - 代表洞察
+    icon: 'lightbulb' // 전구 아이콘 - 인사이트를 나타냅니다
   },
   'panorama_search': {
-    name: 'Panorama Search',
+    name: '전방위 검색',
     color: 'blue',
-    icon: 'globe' // 地球图标 - 代表全景搜索
+    icon: 'globe' // 지구본 아이콘 - 전방위 검색을 나타냅니다
   },
   'interview_agents': {
-    name: 'Agent Interview',
+    name: '에이전트 인터뷰',
     color: 'green',
-    icon: 'users' // 用户图标 - 代表对话
+    icon: 'users' // 사용자 아이콘 - 대화를 나타냅니다
   },
   'quick_search': {
-    name: 'Quick Search',
+    name: '빠른 검색',
     color: 'orange',
-    icon: 'zap' // 闪电图标 - 代表快速
+    icon: 'zap' // 번개 아이콘 - 빠른 검색을 나타냅니다
   },
   'get_graph_statistics': {
-    name: 'Graph Stats',
+    name: '그래프 통계',
     color: 'cyan',
-    icon: 'chart' // 图表图标 - 代表统计
+    icon: 'chart' // 차트 아이콘 - 통계를 나타냅니다
   },
   'get_entities_by_type': {
-    name: 'Entity Query',
+    name: '엔티티 조회',
     color: 'pink',
-    icon: 'database' // 数据库图标 - 代表实体
+    icon: 'database' // 데이터베이스 아이콘 - 엔티티를 나타냅니다
   }
 }
 
@@ -538,7 +538,7 @@ const getToolIcon = (toolName) => {
   return toolConfig[toolName]?.icon || 'tool'
 }
 
-// Parse functions
+// 파싱 함수
 const parseInsightForge = (text) => {
   const result = {
     query: '',
@@ -549,32 +549,32 @@ const parseInsightForge = (text) => {
     entities: [],
     relations: []
   }
-  
+
   try {
-    // 提取分析问题
+    // 분석 질문을 추출합니다
     const queryMatch = text.match(/分析问题:\s*(.+?)(?:\n|$)/)
     if (queryMatch) result.query = queryMatch[1].trim()
-    
-    // 提取预测场景
-    const reqMatch = text.match(/预测场景:\s*(.+?)(?:\n|$)/)
+
+    // 예측 시나리오를 추출합니다
+    const reqMatch = text.match(/예측 시나리오: \s*(.+?)(?:\n|$)/)
     if (reqMatch) result.simulationRequirement = reqMatch[1].trim()
-    
-    // 提取统计数据 - 匹配"相关预测事实: X条"格式
+
+    // 통계 데이터를 추출합니다 - "관련 예측 사실: X개" 형식과 매칭합니다
     const factMatch = text.match(/相关预测事实:\s*(\d+)/)
-    const entityMatch = text.match(/涉及实体:\s*(\d+)/)
-    const relMatch = text.match(/关系链:\s*(\d+)/)
+    const entityMatch = text.match(/관련 엔티티:\s*(\d+)/)
+    const relMatch = text.match(/관계망:\s*(\d+)/)
     if (factMatch) result.stats.facts = parseInt(factMatch[1])
     if (entityMatch) result.stats.entities = parseInt(entityMatch[1])
     if (relMatch) result.stats.relationships = parseInt(relMatch[1])
-    
-    // 提取子问题 - 完整提取，不限制数量
-    const subQSection = text.match(/### 分析的子问题\n([\s\S]*?)(?=\n###|$)/)
+
+      // 하위 질문을 추출합니다. 개수 제한은 두지 않습니다.
+    const subQSection = text.match(/### 分析的하위 질문\n([\s\S]*?)(?=\n###|$)/)
     if (subQSection) {
       const lines = subQSection[1].split('\n').filter(l => l.match(/^\d+\./))
       result.subQueries = lines.map(l => l.replace(/^\d+\.\s*/, '').trim()).filter(Boolean)
     }
-    
-    // 提取关键事实 - 完整提取，不限制数量
+
+    // 핵심 사실을 추출합니다 - 전체를 추출하며 개수 제한은 두지 않습니다
     const factsSection = text.match(/### 【关键事实】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/)
     if (factsSection) {
       const lines = factsSection[1].split('\n').filter(l => l.match(/^\d+\./))
@@ -583,12 +583,12 @@ const parseInsightForge = (text) => {
         return match ? match[1].replace(/^"|"$/g, '').trim() : l.replace(/^\d+\.\s*/, '').trim()
       }).filter(Boolean)
     }
-    
-    // 提取核心实体 - 完整提取，包含摘要和相关事实数
-    const entitySection = text.match(/### 【核心实体】\n([\s\S]*?)(?=\n###|$)/)
+
+    // 핵심 엔티티를 추출합니다 - 요약과 관련 사실 수를 포함해 전체를 추출합니다
+    const entitySection = text.match(/### 【핵심 엔티티】\n([\s\S]*?)(?=\n###|$)/)
     if (entitySection) {
       const entityText = entitySection[1]
-      // 按 "- **" 分割实体块
+      // "- **" 기준으로 엔티티 블록을 나눕니다
       const entityBlocks = entityText.split(/\n(?=- \*\*)/).filter(b => b.trim().startsWith('- **'))
       result.entities = entityBlocks.map(block => {
         const nameMatch = block.match(/^-\s*\*\*(.+?)\*\*\s*\((.+?)\)/)
@@ -602,9 +602,9 @@ const parseInsightForge = (text) => {
         }
       }).filter(e => e.name)
     }
-    
-    // 提取关系链 - 完整提取，不限制数量
-    const relSection = text.match(/### 【关系链】\n([\s\S]*?)(?=\n###|$)/)
+
+    // 관계망을 추출합니다 - 전체를 추출하며 개수 제한은 두지 않습니다
+    const relSection = text.match(/### 【관계망】\n([\s\S]*?)(?=\n###|$)/)
     if (relSection) {
       const lines = relSection[1].split('\n').filter(l => l.trim().startsWith('-'))
       result.relations = lines.map(l => {
@@ -616,9 +616,9 @@ const parseInsightForge = (text) => {
       }).filter(Boolean)
     }
   } catch (e) {
-    console.warn('Parse insight_forge failed:', e)
+    console.warn('인사이트 포지 파싱에 실패했습니다:', e)
   }
-  
+
   return result
 }
 
@@ -630,13 +630,13 @@ const parsePanorama = (text) => {
     historicalFacts: [],
     entities: []
   }
-  
+
   try {
-    // 提取查询
+    // 쿼리를 추출합니다
     const queryMatch = text.match(/查询:\s*(.+?)(?:\n|$)/)
     if (queryMatch) result.query = queryMatch[1].trim()
-    
-    // 提取统计数据
+
+    // 통계 데이터를 추출합니다
     const nodesMatch = text.match(/总节点数:\s*(\d+)/)
     const edgesMatch = text.match(/总边数:\s*(\d+)/)
     const activeMatch = text.match(/当前有效事实:\s*(\d+)/)
@@ -645,19 +645,19 @@ const parsePanorama = (text) => {
     if (edgesMatch) result.stats.edges = parseInt(edgesMatch[1])
     if (activeMatch) result.stats.activeFacts = parseInt(activeMatch[1])
     if (histMatch) result.stats.historicalFacts = parseInt(histMatch[1])
-    
-    // 提取当前有效事实 - 完整提取，不限制数量
+
+    // 현재 유효한 사실을 추출합니다 - 전체를 추출하며 개수 제한은 두지 않습니다
     const activeSection = text.match(/### 【当前有效事实】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/)
     if (activeSection) {
       const lines = activeSection[1].split('\n').filter(l => l.match(/^\d+\./))
       result.activeFacts = lines.map(l => {
-        // 移除编号和引号
+        // 번호와 따옴표를 제거합니다
         const factText = l.replace(/^\d+\.\s*/, '').replace(/^"|"$/g, '').trim()
         return factText
       }).filter(Boolean)
     }
-    
-    // 提取历史/过期事实 - 完整提取，不限制数量
+
+    // 과거/만료 사실을 추출합니다 - 전체를 추출하며 개수 제한은 두지 않습니다
     const histSection = text.match(/### 【历史\/过期事实】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/)
     if (histSection) {
       const lines = histSection[1].split('\n').filter(l => l.match(/^\d+\./))
@@ -666,9 +666,9 @@ const parsePanorama = (text) => {
         return factText
       }).filter(Boolean)
     }
-    
-    // 提取涉及实体 - 完整提取，不限制数量
-    const entitySection = text.match(/### 【涉及实体】\n([\s\S]*?)(?=\n###|$)/)
+
+    // 관련 엔티티를 추출합니다 - 전체를 추출하며 개수 제한은 두지 않습니다
+    const entitySection = text.match(/### 【관련 엔티티】\n([\s\S]*?)(?=\n###|$)/)
     if (entitySection) {
       const lines = entitySection[1].split('\n').filter(l => l.trim().startsWith('-'))
       result.entities = lines.map(l => {
@@ -678,9 +678,9 @@ const parsePanorama = (text) => {
       }).filter(Boolean)
     }
   } catch (e) {
-    console.warn('Parse panorama failed:', e)
+    console.warn('파노라마 파싱에 실패했습니다:', e)
   }
-  
+
   return result
 }
 
@@ -694,50 +694,50 @@ const parseInterview = (text) => {
     interviews: [],
     summary: ''
   }
-  
+
   try {
-    // 提取采访主题
+    // 인터뷰 주제를 추출합니다
     const topicMatch = text.match(/\*\*采访主题:\*\*\s*(.+?)(?:\n|$)/)
     if (topicMatch) result.topic = topicMatch[1].trim()
-    
-    // 提取采访人数（如 "5 / 9 位模拟Agent"）
+
+    // 인터뷰 인원을 추출합니다(예: "5 / 9 명의 시뮬레이션 에이전트")
     const countMatch = text.match(/\*\*采访人数:\*\*\s*(\d+)\s*\/\s*(\d+)/)
     if (countMatch) {
       result.successCount = parseInt(countMatch[1])
       result.totalCount = parseInt(countMatch[2])
       result.agentCount = `${countMatch[1]} / ${countMatch[2]}`
     }
-    
-    // 提取采访对象选择理由
-    const reasonMatch = text.match(/### 采访对象选择理由\n([\s\S]*?)(?=\n---\n|\n### 采访实录)/)
+
+    // 인터뷰 대상 선택 이유를 추출합니다
+    const reasonMatch = text.match(/### 采访对象선택 이유\n([\s\S]*?)(?=\n---\n|\n### 采访实录)/)
     if (reasonMatch) {
       result.selectionReason = reasonMatch[1].trim()
     }
-    
-    // 解析每个人的选择理由
+
+    // 각 사람의 선택 이유를 파싱합니다
     const parseIndividualReasons = (reasonText) => {
       const reasons = {}
       if (!reasonText) return reasons
-      
+
       const lines = reasonText.split(/\n+/)
       let currentName = null
       let currentReason = []
-      
+
       for (const line of lines) {
         let headerMatch = null
         let name = null
         let reasonStart = null
-        
-        // 格式1: 数字. **名字（index=X）**：理由
-        // 例如: 1. **校友_345（index=1）**：作为武大校友...
+
+        // 형식 1: 숫자. **이름(index=X)**: 이유
+        // 예: 1. **校友_345(index=1)**: 우한대 동문으로서...
         headerMatch = line.match(/^\d+\.\s*\*\*([^*（(]+)(?:[（(]index\s*=?\s*\d+[)）])?\*\*[：:]\s*(.*)/)
         if (headerMatch) {
           name = headerMatch[1].trim()
           reasonStart = headerMatch[2]
         }
-        
-        // 格式2: - 选择名字（index X）：理由
-        // 例如: - 选择家长_601（index 0）：作为家长群体代表...
+
+        // 형식 2: - 이름 선택(index X): 이유
+        // 예: - 选择家长_601(index 0): 학부모 집단의 대표로서...
         if (!headerMatch) {
           headerMatch = line.match(/^-\s*选择([^（(]+)(?:[（(]index\s*=?\s*\d+[)）])?[：:]\s*(.*)/)
           if (headerMatch) {
@@ -745,9 +745,9 @@ const parseInterview = (text) => {
             reasonStart = headerMatch[2]
           }
         }
-        
-        // 格式3: - **名字（index X）**：理由
-        // 例如: - **家长_601（index 0）**：作为家长群体代表...
+
+        // 형식 3: - **이름(index X)**: 이유
+        // 예: - **家长_601(index 0)**: 학부모 집단의 대표로서...
         if (!headerMatch) {
           headerMatch = line.match(/^-\s*\*\*([^*（(]+)(?:[（(]index\s*=?\s*\d+[)）])?\*\*[：:]\s*(.*)/)
           if (headerMatch) {
@@ -755,34 +755,34 @@ const parseInterview = (text) => {
             reasonStart = headerMatch[2]
           }
         }
-        
+
         if (name) {
-          // 保存上一个人的理由
+          // 이전 사람의 이유를 저장합니다
           if (currentName && currentReason.length > 0) {
             reasons[currentName] = currentReason.join(' ').trim()
           }
-          // 开始新的人
+          // 새 사람의 처리를 시작합니다
           currentName = name
           currentReason = reasonStart ? [reasonStart.trim()] : []
         } else if (currentName && line.trim() && !line.match(/^未选|^综上|^最终选择/)) {
-          // 理由的续行（排除结尾总结段落）
+          // 이유의 이어지는 줄입니다(끝부분 요약 단락은 제외)
           currentReason.push(line.trim())
         }
       }
-      
-      // 保存最后一个人的理由
+
+      // 마지막 사람의 이유를 저장합니다
       if (currentName && currentReason.length > 0) {
         reasons[currentName] = currentReason.join(' ').trim()
       }
-      
+
       return reasons
     }
-    
+
     const individualReasons = parseIndividualReasons(result.selectionReason)
-    
-    // 提取每个采访记录
+
+    // 각 인터뷰 기록을 추출합니다
     const interviewBlocks = text.split(/#### 采访 #\d+:/).slice(1)
-    
+
     interviewBlocks.forEach((block, index) => {
       const interview = {
         num: index + 1,
@@ -796,34 +796,34 @@ const parseInterview = (text) => {
         redditAnswer: '',
         quotes: []
       }
-      
-      // 提取标题（如 "学生"、"教育从业者" 等）
+
+      // 제목을 추출합니다(예: "학생", "교육 종사자" 등)
       const titleMatch = block.match(/^(.+?)\n/)
       if (titleMatch) interview.title = titleMatch[1].trim()
-      
-      // 提取姓名和角色
+
+      // 이름과 역할을 추출합니다
       const nameRoleMatch = block.match(/\*\*(.+?)\*\*\s*\((.+?)\)/)
       if (nameRoleMatch) {
         interview.name = nameRoleMatch[1].trim()
         interview.role = nameRoleMatch[2].trim()
-        // 设置该人的选择理由
+        // 해당 사람의 선택 이유를 설정합니다
         interview.selectionReason = individualReasons[interview.name] || ''
       }
-      
-      // 提取简介
+
+      // 소개를 추출합니다
       const bioMatch = block.match(/_简介:\s*([\s\S]*?)_\n/)
       if (bioMatch) {
         interview.bio = bioMatch[1].trim().replace(/\.\.\.$/, '...')
       }
-      
-      // 提取问题列表
+
+      // 질문 목록을 추출합니다
       const qMatch = block.match(/\*\*Q:\*\*\s*([\s\S]*?)(?=\n\n\*\*A:\*\*|\*\*A:\*\*)/)
       if (qMatch) {
         const qText = qMatch[1].trim()
-        // 按数字编号分割问题
+        // 숫자 번호를 기준으로 질문을 분리합니다
         const questions = qText.split(/\n\d+\.\s+/).filter(q => q.trim())
         if (questions.length > 0) {
-          // 如果第一个问题前面有"1."，需要特殊处理
+          // 첫 번째 질문 앞에 "1."이 있으면 별도 처리합니다
           const firstQ = qText.match(/^1\.\s+(.+)/)
           if (firstQ) {
             interview.questions = [firstQ[1].trim(), ...questions.slice(1).map(q => q.trim())]
@@ -832,26 +832,26 @@ const parseInterview = (text) => {
           }
         }
       }
-      
-      // 提取回答 - 分Twitter和Reddit
+
+      // 답변을 추출합니다 - Twitter와 Reddit으로 분리합니다
       const answerMatch = block.match(/\*\*A:\*\*\s*([\s\S]*?)(?=\*\*关键引言|$)/)
       if (answerMatch) {
         const answerText = answerMatch[1].trim()
-        
-        // 分离Twitter和Reddit回答
+
+        // Twitter와 Reddit 답변을 분리합니다
         const twitterMatch = answerText.match(/【Twitter平台回答】\n?([\s\S]*?)(?=【Reddit平台回答】|$)/)
         const redditMatch = answerText.match(/【Reddit平台回答】\n?([\s\S]*?)$/)
-        
+
         if (twitterMatch) {
           interview.twitterAnswer = twitterMatch[1].trim()
         }
         if (redditMatch) {
           interview.redditAnswer = redditMatch[1].trim()
         }
-        
-        // 平台回退逻辑（兼容旧格式：只有一个平台标记的情况）
+
+        // 플랫폼 폴백 로직(구식 형식: 플랫폼 표시가 하나만 있는 경우와 호환)
         if (!twitterMatch && redditMatch) {
-          // 只有 Reddit 回答，仅在非占位文本时复制为默认显示
+          // Reddit 답변만 있는 경우, 자리표시자가 아닐 때만 기본 표시용으로 복사합니다
           if (interview.redditAnswer && interview.redditAnswer !== '（该平台未获得回复）') {
             interview.twitterAnswer = interview.redditAnswer
           }
@@ -860,18 +860,18 @@ const parseInterview = (text) => {
             interview.redditAnswer = interview.twitterAnswer
           }
         } else if (!twitterMatch && !redditMatch) {
-          // 没有分平台标记（极旧格式），整体作为回答
+          // 플랫폼 구분 표시가 없는 경우(아주 오래된 형식), 전체를 답변으로 사용합니다
           interview.twitterAnswer = answerText
         }
       }
-      
-      // 提取关键引言（兼容多种引号格式）
+
+      // 핵심 인용문을 추출합니다(여러 인용 부호 형식과 호환)
       const quotesMatch = block.match(/\*\*关键引言:\*\*\n([\s\S]*?)(?=\n---|\n####|$)/)
       if (quotesMatch) {
         const quotesText = quotesMatch[1]
-        // 优先匹配 > "text" 格式
+        // 우선 > "text" 형식을 매칭합니다
         let quoteMatches = quotesText.match(/> "([^"]+)"/g)
-        // 回退：匹配 > "text" 或 > \u201Ctext\u201D（中文引号）
+        // 폴백: > "text" 또는 > \u201Ctext\u201D(중국어 인용 부호)를 매칭합니다
         if (!quoteMatches) {
           quoteMatches = quotesText.match(/> [\u201C""]([^\u201D""]+)[\u201D""]/g)
         }
@@ -881,21 +881,21 @@ const parseInterview = (text) => {
             .filter(q => q)
         }
       }
-      
+
       if (interview.name || interview.title) {
         result.interviews.push(interview)
       }
     })
-    
+
     // 提取采访摘要
     const summaryMatch = text.match(/### 采访摘要与核心观点\n([\s\S]*?)$/)
     if (summaryMatch) {
       result.summary = summaryMatch[1].trim()
     }
   } catch (e) {
-    console.warn('Parse interview failed:', e)
+    console.warn('인터뷰 파싱에 실패했습니다:', e)
   }
-  
+
   return result
 }
 
@@ -907,24 +907,24 @@ const parseQuickSearch = (text) => {
     edges: [],
     nodes: []
   }
-  
+
   try {
-    // 提取搜索查询
+    // 검색 쿼리를 추출합니다
     const queryMatch = text.match(/搜索查询:\s*(.+?)(?:\n|$)/)
     if (queryMatch) result.query = queryMatch[1].trim()
-    
-    // 提取结果数量
+
+    // 결과 수를 추출합니다
     const countMatch = text.match(/找到\s*(\d+)\s*条/)
     if (countMatch) result.count = parseInt(countMatch[1])
-    
-    // 提取相关事实 - 完整提取，不限制数量
+
+    // 관련 사실을 추출합니다 - 전체를 추출하며 개수 제한은 두지 않습니다
     const factsSection = text.match(/### 相关事实:\n([\s\S]*)$/)
     if (factsSection) {
       const lines = factsSection[1].split('\n').filter(l => l.match(/^\d+\./))
       result.facts = lines.map(l => l.replace(/^\d+\.\s*/, '').trim()).filter(Boolean)
     }
-    
-    // 尝试提取边信息（如果有）
+
+    // 간선 정보를 추출해 봅니다(있다면)
     const edgesSection = text.match(/### 相关边:\n([\s\S]*?)(?=\n###|$)/)
     if (edgesSection) {
       const lines = edgesSection[1].split('\n').filter(l => l.trim().startsWith('-'))
@@ -936,9 +936,9 @@ const parseQuickSearch = (text) => {
         return null
       }).filter(Boolean)
     }
-    
-    // 尝试提取节点信息（如果有）
-    const nodesSection = text.match(/### 相关节点:\n([\s\S]*?)(?=\n###|$)/)
+
+    // 노드 정보를 추출해 봅니다(있다면)
+    const nodesSection = text.match(/### 관련 노드:\n([\s\S]*?)(?=\n###|$)/)
     if (nodesSection) {
       const lines = nodesSection[1].split('\n').filter(l => l.trim().startsWith('-'))
       result.nodes = lines.map(l => {
@@ -950,15 +950,15 @@ const parseQuickSearch = (text) => {
       }).filter(Boolean)
     }
   } catch (e) {
-    console.warn('Parse quick_search failed:', e)
+    console.warn('빠른 검색 파싱에 실패했습니다:', e)
   }
-  
+
   return result
 }
 
-// ========== Sub Components ==========
+// ========== 하위 컴포넌트 ==========
 
-// Insight Display Component - Enhanced with full data rendering (Interview-like style)
+// 인사이트 표시 컴포넌트 - 전체 데이터 렌더링을 강화한 인터뷰형 스타일
 const InsightDisplay = {
   props: ['result', 'resultLength'],
   setup(props) {
@@ -967,35 +967,35 @@ const InsightDisplay = {
     const expandedEntities = ref(false)
     const expandedRelations = ref(false)
     const INITIAL_SHOW_COUNT = 5
-    
-    // Format result size for display
+
+    // 표시용 결과 크기를 형식화합니다
     const formatSize = (length) => {
       if (!length) return ''
       if (length >= 1000) {
-        return `${(length / 1000).toFixed(1)}k chars`
+        return `${(length / 1000).toFixed(1)}천 자`
       }
-      return `${length} chars`
+      return `${length}자`
     }
-    
+
     return () => h('div', { class: 'insight-display' }, [
-      // Header Section - like interview header
+      // 헤더 섹션 - 인터뷰 헤더처럼 구성합니다
       h('div', { class: 'insight-header' }, [
         h('div', { class: 'header-main' }, [
-          h('div', { class: 'header-title' }, 'Deep Insight'),
+          h('div', { class: 'header-title' }, '심층 분석'),
           h('div', { class: 'header-stats' }, [
             h('span', { class: 'stat-item' }, [
               h('span', { class: 'stat-value' }, props.result.stats.facts || props.result.facts.length),
-              h('span', { class: 'stat-label' }, 'Facts')
+              h('span', { class: 'stat-label' }, '사실')
             ]),
             h('span', { class: 'stat-divider' }, '/'),
             h('span', { class: 'stat-item' }, [
               h('span', { class: 'stat-value' }, props.result.stats.entities || props.result.entities.length),
-              h('span', { class: 'stat-label' }, 'Entities')
+              h('span', { class: 'stat-label' }, '엔티티')
             ]),
             h('span', { class: 'stat-divider' }, '/'),
             h('span', { class: 'stat-item' }, [
               h('span', { class: 'stat-value' }, props.result.stats.relationships || props.result.relations.length),
-              h('span', { class: 'stat-label' }, 'Relations')
+              h('span', { class: 'stat-label' }, '관계')
             ]),
             props.resultLength && h('span', { class: 'stat-divider' }, '·'),
             props.resultLength && h('span', { class: 'stat-size' }, formatSize(props.resultLength))
@@ -1003,49 +1003,49 @@ const InsightDisplay = {
         ]),
         props.result.query && h('div', { class: 'header-topic' }, props.result.query),
         props.result.simulationRequirement && h('div', { class: 'header-scenario' }, [
-          h('span', { class: 'scenario-label' }, '预测场景: '),
+          h('span', { class: 'scenario-label' }, '예측 시나리오:  '),
           h('span', { class: 'scenario-text' }, props.result.simulationRequirement)
         ])
       ]),
-      
-      // Tab Navigation
+
+      // 탭 내비게이션
       h('div', { class: 'insight-tabs' }, [
         h('button', {
           class: ['insight-tab', { active: activeTab.value === 'facts' }],
           onClick: () => { activeTab.value = 'facts' }
         }, [
-          h('span', { class: 'tab-label' }, `当前关键记忆 (${props.result.facts.length})`)
+          h('span', { class: 'tab-label' }, `현재 핵심 기억 (${props.result.facts.length})`)
         ]),
         h('button', {
           class: ['insight-tab', { active: activeTab.value === 'entities' }],
           onClick: () => { activeTab.value = 'entities' }
         }, [
-          h('span', { class: 'tab-label' }, `核心实体 (${props.result.entities.length})`)
+          h('span', { class: 'tab-label' }, `핵심 엔티티 (${props.result.entities.length})`)
         ]),
         h('button', {
           class: ['insight-tab', { active: activeTab.value === 'relations' }],
           onClick: () => { activeTab.value = 'relations' }
         }, [
-          h('span', { class: 'tab-label' }, `关系链 (${props.result.relations.length})`)
+          h('span', { class: 'tab-label' }, `관계망 (${props.result.relations.length})`)
         ]),
         props.result.subQueries.length > 0 && h('button', {
           class: ['insight-tab', { active: activeTab.value === 'subqueries' }],
           onClick: () => { activeTab.value = 'subqueries' }
         }, [
-          h('span', { class: 'tab-label' }, `子问题 (${props.result.subQueries.length})`)
+          h('span', { class: 'tab-label' }, `하위 질문 (${props.result.subQueries.length})`)
         ])
       ]),
-      
-      // Tab Content
+
+      // 탭 내용
       h('div', { class: 'insight-content' }, [
-        // Facts Tab
+        // 사실 탭
         activeTab.value === 'facts' && props.result.facts.length > 0 && h('div', { class: 'facts-panel' }, [
           h('div', { class: 'panel-header' }, [
-            h('span', { class: 'panel-title' }, '时序记忆中所关联的最新关键事实'),
-            h('span', { class: 'panel-count' }, `共 ${props.result.facts.length} 条`)
+            h('span', { class: 'panel-title' }, '시계열 기억과 연결된 최신 핵심 사실'),
+            h('span', { class: 'panel-count' }, `총 ${props.result.facts.length}개`)
           ]),
           h('div', { class: 'facts-list' },
-            (expandedFacts.value ? props.result.facts : props.result.facts.slice(0, INITIAL_SHOW_COUNT)).map((fact, i) => 
+            (expandedFacts.value ? props.result.facts : props.result.facts.slice(0, INITIAL_SHOW_COUNT)).map((fact, i) =>
               h('div', { class: 'fact-item', key: i }, [
                 h('span', { class: 'fact-number' }, i + 1),
                 h('div', { class: 'fact-content' }, fact)
@@ -1055,38 +1055,38 @@ const InsightDisplay = {
           props.result.facts.length > INITIAL_SHOW_COUNT && h('button', {
             class: 'expand-btn',
             onClick: () => { expandedFacts.value = !expandedFacts.value }
-          }, expandedFacts.value ? `收起 ▲` : `展开全部 ${props.result.facts.length} 条 ▼`)
+          }, expandedFacts.value ? `접기 ▲` : `전체 보기 ${props.result.facts.length}개 ▼`)
         ]),
-        
-        // Entities Tab
+
+        // 엔티티 탭
         activeTab.value === 'entities' && props.result.entities.length > 0 && h('div', { class: 'entities-panel' }, [
           h('div', { class: 'panel-header' }, [
-            h('span', { class: 'panel-title' }, '核心实体'),
-            h('span', { class: 'panel-count' }, `共 ${props.result.entities.length} 个`)
+            h('span', { class: 'panel-title' }, '핵심 엔티티'),
+            h('span', { class: 'panel-count' }, `총 ${props.result.entities.length}개`)
           ]),
           h('div', { class: 'entities-grid' },
-            (expandedEntities.value ? props.result.entities : props.result.entities.slice(0, 12)).map((entity, i) => 
+            (expandedEntities.value ? props.result.entities : props.result.entities.slice(0, 12)).map((entity, i) =>
               h('div', { class: 'entity-tag', key: i, title: entity.summary || '' }, [
                 h('span', { class: 'entity-name' }, entity.name),
                 h('span', { class: 'entity-type' }, entity.type),
-                entity.relatedFactsCount > 0 && h('span', { class: 'entity-fact-count' }, `${entity.relatedFactsCount}条`)
+                entity.relatedFactsCount > 0 && h('span', { class: 'entity-fact-count' }, `${entity.relatedFactsCount}개`)
               ])
             )
           ),
           props.result.entities.length > 12 && h('button', {
             class: 'expand-btn',
             onClick: () => { expandedEntities.value = !expandedEntities.value }
-          }, expandedEntities.value ? `收起 ▲` : `展开全部 ${props.result.entities.length} 个 ▼`)
+          }, expandedEntities.value ? `접기 ▲` : `전체 보기 ${props.result.entities.length}개 ▼`)
         ]),
-        
-        // Relations Tab
+
+        // 관계 탭
         activeTab.value === 'relations' && props.result.relations.length > 0 && h('div', { class: 'relations-panel' }, [
           h('div', { class: 'panel-header' }, [
-            h('span', { class: 'panel-title' }, '关系链'),
-            h('span', { class: 'panel-count' }, `共 ${props.result.relations.length} 条`)
+            h('span', { class: 'panel-title' }, '관계망'),
+            h('span', { class: 'panel-count' }, `총 ${props.result.relations.length}개`)
           ]),
           h('div', { class: 'relations-list' },
-            (expandedRelations.value ? props.result.relations : props.result.relations.slice(0, INITIAL_SHOW_COUNT)).map((rel, i) => 
+            (expandedRelations.value ? props.result.relations : props.result.relations.slice(0, INITIAL_SHOW_COUNT)).map((rel, i) =>
               h('div', { class: 'relation-item', key: i }, [
                 h('span', { class: 'rel-source' }, rel.source),
                 h('span', { class: 'rel-arrow' }, [
@@ -1101,17 +1101,17 @@ const InsightDisplay = {
           props.result.relations.length > INITIAL_SHOW_COUNT && h('button', {
             class: 'expand-btn',
             onClick: () => { expandedRelations.value = !expandedRelations.value }
-          }, expandedRelations.value ? `收起 ▲` : `展开全部 ${props.result.relations.length} 条 ▼`)
+          }, expandedRelations.value ? `접기 ▲` : `전체 보기 ${props.result.relations.length}개 ▼`)
         ]),
-        
-        // Sub-queries Tab
+
+        // 하위 질문 탭
         activeTab.value === 'subqueries' && props.result.subQueries.length > 0 && h('div', { class: 'subqueries-panel' }, [
           h('div', { class: 'panel-header' }, [
-            h('span', { class: 'panel-title' }, '漂移查询生成分析子问题'),
-            h('span', { class: 'panel-count' }, `共 ${props.result.subQueries.length} 个`)
+            h('span', { class: 'panel-title' }, '드리프트 질의 생성 분석 하위 질문'),
+            h('span', { class: 'panel-count' }, `총 ${props.result.subQueries.length}개`)
           ]),
           h('div', { class: 'subqueries-list' },
-            props.result.subQueries.map((sq, i) => 
+            props.result.subQueries.map((sq, i) =>
               h('div', { class: 'subquery-item', key: i }, [
                 h('span', { class: 'subquery-number' }, `Q${i + 1}`),
                 h('div', { class: 'subquery-text' }, sq)
@@ -1119,17 +1119,17 @@ const InsightDisplay = {
             )
           )
         ]),
-        
-        // Empty state
-        activeTab.value === 'facts' && props.result.facts.length === 0 && h('div', { class: 'empty-state' }, '暂无当前关键记忆'),
-        activeTab.value === 'entities' && props.result.entities.length === 0 && h('div', { class: 'empty-state' }, '暂无核心实体'),
-        activeTab.value === 'relations' && props.result.relations.length === 0 && h('div', { class: 'empty-state' }, '暂无关系链')
+
+        // 빈 상태
+        activeTab.value === 'facts' && props.result.facts.length === 0 && h('div', { class: 'empty-state' }, '현재 핵심 기억이 없습니다'),
+        activeTab.value === 'entities' && props.result.entities.length === 0 && h('div', { class: 'empty-state' }, '핵심 엔티티가 없습니다'),
+        activeTab.value === 'relations' && props.result.relations.length === 0 && h('div', { class: 'empty-state' }, '관계망이 없습니다')
       ])
     ])
   }
 }
 
-// Panorama Display Component - Enhanced with Active/Historical tabs
+// 파노라마 표시 컴포넌트 - 현재/과거 탭을 강화했습니다
 const PanoramaDisplay = {
   props: ['result', 'resultLength'],
   setup(props) {
@@ -1138,30 +1138,30 @@ const PanoramaDisplay = {
     const expandedHistorical = ref(false)
     const expandedEntities = ref(false)
     const INITIAL_SHOW_COUNT = 5
-    
-    // Format result size for display
+
+    // 표시용 결과 크기를 형식화합니다
     const formatSize = (length) => {
       if (!length) return ''
       if (length >= 1000) {
-        return `${(length / 1000).toFixed(1)}k chars`
+        return `${(length / 1000).toFixed(1)}천 자`
       }
-      return `${length} chars`
+      return `${length}자`
     }
-    
+
     return () => h('div', { class: 'panorama-display' }, [
-      // Header Section
+      // 헤더 섹션
       h('div', { class: 'panorama-header' }, [
         h('div', { class: 'header-main' }, [
-          h('div', { class: 'header-title' }, 'Panorama Search'),
+          h('div', { class: 'header-title' }, '전방위 검색'),
           h('div', { class: 'header-stats' }, [
             h('span', { class: 'stat-item' }, [
               h('span', { class: 'stat-value' }, props.result.stats.nodes),
-              h('span', { class: 'stat-label' }, 'Nodes')
+              h('span', { class: 'stat-label' }, '노드')
             ]),
             h('span', { class: 'stat-divider' }, '/'),
             h('span', { class: 'stat-item' }, [
               h('span', { class: 'stat-value' }, props.result.stats.edges),
-              h('span', { class: 'stat-label' }, 'Edges')
+              h('span', { class: 'stat-label' }, '간선')
             ]),
             props.resultLength && h('span', { class: 'stat-divider' }, '·'),
             props.resultLength && h('span', { class: 'stat-size' }, formatSize(props.resultLength))
@@ -1169,63 +1169,63 @@ const PanoramaDisplay = {
         ]),
         props.result.query && h('div', { class: 'header-topic' }, props.result.query)
       ]),
-      
-      // Tab Navigation
+
+      // 탭 내비게이션
       h('div', { class: 'panorama-tabs' }, [
         h('button', {
           class: ['panorama-tab', { active: activeTab.value === 'active' }],
           onClick: () => { activeTab.value = 'active' }
         }, [
-          h('span', { class: 'tab-label' }, `当前有效记忆 (${props.result.activeFacts.length})`)
+          h('span', { class: 'tab-label' }, `현재 유효한 기억 (${props.result.activeFacts.length})`)
         ]),
         h('button', {
           class: ['panorama-tab', { active: activeTab.value === 'historical' }],
           onClick: () => { activeTab.value = 'historical' }
         }, [
-          h('span', { class: 'tab-label' }, `历史记忆 (${props.result.historicalFacts.length})`)
+          h('span', { class: 'tab-label' }, `과거 기억 (${props.result.historicalFacts.length})`)
         ]),
         h('button', {
           class: ['panorama-tab', { active: activeTab.value === 'entities' }],
           onClick: () => { activeTab.value = 'entities' }
         }, [
-          h('span', { class: 'tab-label' }, `涉及实体 (${props.result.entities.length})`)
+          h('span', { class: 'tab-label' }, `관련 엔티티 (${props.result.entities.length})`)
         ])
       ]),
-      
-      // Tab Content
+
+      // 탭 내용
       h('div', { class: 'panorama-content' }, [
-        // Active Facts Tab
+        // 현재 사실 탭
         activeTab.value === 'active' && h('div', { class: 'facts-panel active-facts' }, [
           h('div', { class: 'panel-header' }, [
-            h('span', { class: 'panel-title' }, '当前有效记忆'),
-            h('span', { class: 'panel-count' }, `共 ${props.result.activeFacts.length} 条`)
+            h('span', { class: 'panel-title' }, '현재 유효한 기억'),
+            h('span', { class: 'panel-count' }, `총 ${props.result.activeFacts.length}개`)
           ]),
           props.result.activeFacts.length > 0 ? h('div', { class: 'facts-list' },
-            (expandedActive.value ? props.result.activeFacts : props.result.activeFacts.slice(0, INITIAL_SHOW_COUNT)).map((fact, i) => 
+            (expandedActive.value ? props.result.activeFacts : props.result.activeFacts.slice(0, INITIAL_SHOW_COUNT)).map((fact, i) =>
               h('div', { class: 'fact-item active', key: i }, [
                 h('span', { class: 'fact-number' }, i + 1),
                 h('div', { class: 'fact-content' }, fact)
               ])
             )
-          ) : h('div', { class: 'empty-state' }, '暂无当前有效记忆'),
+          ) : h('div', { class: 'empty-state' }, '현재 유효한 기억이 없습니다'),
           props.result.activeFacts.length > INITIAL_SHOW_COUNT && h('button', {
             class: 'expand-btn',
             onClick: () => { expandedActive.value = !expandedActive.value }
-          }, expandedActive.value ? `收起 ▲` : `展开全部 ${props.result.activeFacts.length} 条 ▼`)
+          }, expandedActive.value ? `접기 ▲` : `전체 보기 ${props.result.activeFacts.length}개 ▼`)
         ]),
-        
-        // Historical Facts Tab
+
+        // 과거 사실 탭
         activeTab.value === 'historical' && h('div', { class: 'facts-panel historical-facts' }, [
           h('div', { class: 'panel-header' }, [
-            h('span', { class: 'panel-title' }, '历史记忆'),
-            h('span', { class: 'panel-count' }, `共 ${props.result.historicalFacts.length} 条`)
+            h('span', { class: 'panel-title' }, '과거 기억'),
+            h('span', { class: 'panel-count' }, `총 ${props.result.historicalFacts.length}개`)
           ]),
           props.result.historicalFacts.length > 0 ? h('div', { class: 'facts-list' },
-            (expandedHistorical.value ? props.result.historicalFacts : props.result.historicalFacts.slice(0, INITIAL_SHOW_COUNT)).map((fact, i) => 
+            (expandedHistorical.value ? props.result.historicalFacts : props.result.historicalFacts.slice(0, INITIAL_SHOW_COUNT)).map((fact, i) =>
               h('div', { class: 'fact-item historical', key: i }, [
                 h('span', { class: 'fact-number' }, i + 1),
                 h('div', { class: 'fact-content' }, [
-                  // 尝试提取时间信息 [time - time]
+                  // 시간 정보를 추출해 봅니다 [time - time]
                   (() => {
                     const timeMatch = fact.match(/^\[(.+?)\]\s*(.*)$/)
                     if (timeMatch) {
@@ -1239,74 +1239,74 @@ const PanoramaDisplay = {
                 ])
               ])
             )
-          ) : h('div', { class: 'empty-state' }, '暂无历史记忆'),
+          ) : h('div', { class: 'empty-state' }, '과거 기억이 없습니다'),
           props.result.historicalFacts.length > INITIAL_SHOW_COUNT && h('button', {
             class: 'expand-btn',
             onClick: () => { expandedHistorical.value = !expandedHistorical.value }
-          }, expandedHistorical.value ? `收起 ▲` : `展开全部 ${props.result.historicalFacts.length} 条 ▼`)
+          }, expandedHistorical.value ? `접기 ▲` : `전체 보기 ${props.result.historicalFacts.length}개 ▼`)
         ]),
-        
-        // Entities Tab
+
+        // 엔티티 탭
         activeTab.value === 'entities' && h('div', { class: 'entities-panel' }, [
           h('div', { class: 'panel-header' }, [
-            h('span', { class: 'panel-title' }, '涉及实体'),
-            h('span', { class: 'panel-count' }, `共 ${props.result.entities.length} 个`)
+            h('span', { class: 'panel-title' }, '관련 엔티티'),
+            h('span', { class: 'panel-count' }, `총 ${props.result.entities.length}개`)
           ]),
           props.result.entities.length > 0 ? h('div', { class: 'entities-grid' },
-            (expandedEntities.value ? props.result.entities : props.result.entities.slice(0, 8)).map((entity, i) => 
+            (expandedEntities.value ? props.result.entities : props.result.entities.slice(0, 8)).map((entity, i) =>
               h('div', { class: 'entity-tag', key: i }, [
                 h('span', { class: 'entity-name' }, entity.name),
                 entity.type && h('span', { class: 'entity-type' }, entity.type)
               ])
             )
-          ) : h('div', { class: 'empty-state' }, '暂无涉及实体'),
+          ) : h('div', { class: 'empty-state' }, '관련 엔티티가 없습니다'),
           props.result.entities.length > 8 && h('button', {
             class: 'expand-btn',
             onClick: () => { expandedEntities.value = !expandedEntities.value }
-          }, expandedEntities.value ? `收起 ▲` : `展开全部 ${props.result.entities.length} 个 ▼`)
+          }, expandedEntities.value ? `접기 ▲` : `전체 보기 ${props.result.entities.length}개 ▼`)
         ])
       ])
     ])
   }
 }
 
-// Interview Display Component - Conversation Style (Q&A Format)
+// 인터뷰 표시 컴포넌트 - 대화형 스타일(Q&A 형식)
 const InterviewDisplay = {
   props: ['result', 'resultLength'],
   setup(props) {
-    // Format result size for display
+    // 표시용 결과 크기를 형식화합니다
     const formatSize = (length) => {
       if (!length) return ''
       if (length >= 1000) {
-        return `${(length / 1000).toFixed(1)}k chars`
+        return `${(length / 1000).toFixed(1)}천 자`
       }
-      return `${length} chars`
+      return `${length}자`
     }
-    
-    // Clean quote text - remove leading list numbers to avoid double numbering
+
+    // 인용문 텍스트를 정리합니다 - 앞의 목록 번호를 제거해 중복 번호 매김을 방지합니다
     const cleanQuoteText = (text) => {
       if (!text) return ''
-      // Remove leading patterns like "1. ", "2. ", "1、", "（1）", "(1)" etc.
+      // "1. ", "2. ", "1、", "（1）", "(1)" 같은 앞부분 패턴을 제거합니다
       return text.replace(/^\s*\d+[\.\、\)）]\s*/, '').trim()
     }
-    
+
     const activeIndex = ref(0)
     const expandedAnswers = ref(new Set())
-    // 为每个问题-回答对维护独立的平台选择状态
+    // 각 질문-답변 쌍마다 독립적인 플랫폼 선택 상태를 유지합니다
     const platformTabs = reactive({}) // { 'agentIdx-qIdx': 'twitter' | 'reddit' }
-    
-    // 获取某个问题的当前平台选择
+
+    // 특정 질문의 현재 플랫폼 선택을 가져옵니다
     const getPlatformTab = (agentIdx, qIdx) => {
       const key = `${agentIdx}-${qIdx}`
       return platformTabs[key] || 'twitter'
     }
-    
-    // 设置某个问题的平台选择
+
+    // 특정 질문의 플랫폼 선택을 설정합니다
     const setPlatformTab = (agentIdx, qIdx, platform) => {
       const key = `${agentIdx}-${qIdx}`
       platformTabs[key] = platform
     }
-    
+
     const toggleAnswer = (key) => {
       const newSet = new Set(expandedAnswers.value)
       if (newSet.has(key)) {
@@ -1316,32 +1316,32 @@ const InterviewDisplay = {
       }
       expandedAnswers.value = newSet
     }
-    
+
     const formatAnswer = (text, expanded) => {
       if (!text) return ''
       if (expanded || text.length <= 400) return text
       return text.substring(0, 400) + '...'
     }
-    
-    // 检查是否为平台占位文本
+
+    // 플랫폼 자리표시자 텍스트인지 확인합니다
     const isPlaceholderText = (text) => {
       if (!text) return true
       const t = text.trim()
       return t === '（该平台未获得回复）' || t === '(该平台未获得回复)' || t === '[无回复]'
     }
 
-    // 尝试按问题编号分割回答
+    // 질문 번호를 기준으로 답변을 나눠 봅니다
     const splitAnswerByQuestions = (answerText, questionCount) => {
       if (!answerText || questionCount <= 0) return [answerText]
       if (isPlaceholderText(answerText)) return ['']
 
-      // 支持两种编号格式：
-      // 1. "问题X：" 或 "问题X:" （中文格式，后端新格式）
-      // 2. "1. " 或 "\n1. " （数字+点，旧格式兼容）
+      // 두 가지 번호 형식을 지원합니다:
+      // 1. "문제X：" 또는 "문제X:"(중국어 형식, 새 백엔드 형식)
+      // 2. "1. " 또는 "\n1. "(숫자+점, 구식 형식 호환)
       let matches = []
       let match
 
-      // 优先尝试 "问题X：" 格式
+      // 먼저 "문제X：" 형식을 시도합니다
       const cnPattern = /(?:^|[\r\n]+)问题(\d+)[：:]\s*/g
       while ((match = cnPattern.exec(answerText)) !== null) {
         matches.push({
@@ -1351,7 +1351,7 @@ const InterviewDisplay = {
         })
       }
 
-      // 如果没匹配到，回退到 "数字." 格式
+      // 매칭되지 않으면 "숫자." 형식으로 폴백합니다
       if (matches.length === 0) {
         const numPattern = /(?:^|[\r\n]+)(\d+)\.\s+/g
         while ((match = numPattern.exec(answerText)) !== null) {
@@ -1363,7 +1363,7 @@ const InterviewDisplay = {
         }
       }
 
-      // 如果没有找到编号或只找到一个，返回整体
+      // 번호를 찾지 못했거나 하나만 찾으면 전체를 반환합니다
       if (matches.length <= 1) {
         const cleaned = answerText
           .replace(/^问题\d+[：:]\s*/, '')
@@ -1372,7 +1372,7 @@ const InterviewDisplay = {
         return [cleaned || answerText]
       }
 
-      // 按编号提取各部分
+      // 번호에 따라 각 부분을 추출합니다
       const parts = []
       for (let i = 0; i < matches.length; i++) {
         const current = matches[i]
@@ -1392,8 +1392,8 @@ const InterviewDisplay = {
 
       return [answerText]
     }
-    
-    // 获取某个问题对应的回答
+
+    // 특정 질문에 해당하는 답변을 가져옵니다
     const getAnswerForQuestion = (interview, qIdx, platform) => {
       const answer = platform === 'twitter' ? interview.twitterAnswer : (interview.redditAnswer || interview.twitterAnswer)
       if (!answer || isPlaceholderText(answer)) return answer || ''
@@ -1401,38 +1401,38 @@ const InterviewDisplay = {
       const questionCount = interview.questions?.length || 1
       const answers = splitAnswerByQuestions(answer, questionCount)
 
-      // 分割成功且索引有效
+      // 분할에 성공했고 인덱스가 유효합니다
       if (answers.length > 1 && qIdx < answers.length) {
         return answers[qIdx] || ''
       }
 
-      // 分割失败：第一个问题返回完整回答，其余返回空
+      // 분할 실패: 첫 번째 질문은 전체 답변을 반환하고, 나머지는 비웁니다
       return qIdx === 0 ? answer : ''
     }
-    
-    // 检查某个问题是否有双平台回答（过滤占位文本）
+
+    // 특정 질문에 양 플랫폼 답변이 있는지 확인합니다(자리표시자 제외)
     const hasMultiplePlatforms = (interview, qIdx) => {
       if (!interview.twitterAnswer || !interview.redditAnswer) return false
       const twitterAnswer = getAnswerForQuestion(interview, qIdx, 'twitter')
       const redditAnswer = getAnswerForQuestion(interview, qIdx, 'reddit')
-      // 两个平台都有真实回答（非占位文本）且内容不同
+      // 두 플랫폼 모두 실제 답변(자리표시자 아님)이 있고 내용이 다릅니다
       return !isPlaceholderText(twitterAnswer) && !isPlaceholderText(redditAnswer) && twitterAnswer !== redditAnswer
     }
-    
+
     return () => h('div', { class: 'interview-display' }, [
-      // Header Section
+      // 헤더 섹션
       h('div', { class: 'interview-header' }, [
         h('div', { class: 'header-main' }, [
-          h('div', { class: 'header-title' }, 'Agent Interview'),
+          h('div', { class: 'header-title' }, '에이전트 인터뷰'),
           h('div', { class: 'header-stats' }, [
             h('span', { class: 'stat-item' }, [
               h('span', { class: 'stat-value' }, props.result.successCount || props.result.interviews.length),
-              h('span', { class: 'stat-label' }, 'Interviewed')
+              h('span', { class: 'stat-label' }, '인터뷰 완료')
             ]),
             props.result.totalCount > 0 && h('span', { class: 'stat-divider' }, '/'),
             props.result.totalCount > 0 && h('span', { class: 'stat-item' }, [
               h('span', { class: 'stat-value' }, props.result.totalCount),
-              h('span', { class: 'stat-label' }, 'Total')
+              h('span', { class: 'stat-label' }, '전체')
             ]),
             props.resultLength && h('span', { class: 'stat-divider' }, '·'),
             props.resultLength && h('span', { class: 'stat-size' }, formatSize(props.resultLength))
@@ -1440,42 +1440,42 @@ const InterviewDisplay = {
         ]),
         props.result.topic && h('div', { class: 'header-topic' }, props.result.topic)
       ]),
-      
-      // Agent Selector Tabs
-      props.result.interviews.length > 0 && h('div', { class: 'agent-tabs' }, 
+
+      // 에이전트 선택 탭
+      props.result.interviews.length > 0 && h('div', { class: 'agent-tabs' },
         props.result.interviews.map((interview, i) => h('button', {
           class: ['agent-tab', { active: activeIndex.value === i }],
           key: i,
           onClick: () => { activeIndex.value = i }
         }, [
           h('span', { class: 'tab-avatar' }, interview.name ? interview.name.charAt(0) : (i + 1)),
-          h('span', { class: 'tab-name' }, interview.title || interview.name || `Agent ${i + 1}`)
+          h('span', { class: 'tab-name' }, interview.title || interview.name || `에이전트 ${i + 1}`)
         ]))
       ),
-      
-      // Active Interview Detail
+
+      // 활성 인터뷰 상세
       props.result.interviews.length > 0 && h('div', { class: 'interview-detail' }, [
-        // Agent Profile Card
+        // 에이전트 프로필 카드
         h('div', { class: 'agent-profile' }, [
           h('div', { class: 'profile-avatar' }, props.result.interviews[activeIndex.value]?.name?.charAt(0) || 'A'),
           h('div', { class: 'profile-info' }, [
-            h('div', { class: 'profile-name' }, props.result.interviews[activeIndex.value]?.name || 'Agent'),
+            h('div', { class: 'profile-name' }, props.result.interviews[activeIndex.value]?.name || '에이전트'),
             h('div', { class: 'profile-role' }, props.result.interviews[activeIndex.value]?.role || ''),
             props.result.interviews[activeIndex.value]?.bio && h('div', { class: 'profile-bio' }, props.result.interviews[activeIndex.value].bio)
           ])
         ]),
-        
-        // Selection Reason - 选择理由
+
+        // 선택 이유
         props.result.interviews[activeIndex.value]?.selectionReason && h('div', { class: 'selection-reason' }, [
-          h('div', { class: 'reason-label' }, '选择理由'),
+          h('div', { class: 'reason-label' }, '선택 이유'),
           h('div', { class: 'reason-content' }, props.result.interviews[activeIndex.value].selectionReason)
         ]),
-        
-        // Q&A Conversation Thread - 一问一答样式
-        h('div', { class: 'qa-thread' }, 
-          (props.result.interviews[activeIndex.value]?.questions?.length > 0 
-            ? props.result.interviews[activeIndex.value].questions 
-            : [props.result.interviews[activeIndex.value]?.question || 'No question available']
+
+        // Q&A 대화 스레드 - 한 질문 한 답변 스타일
+        h('div', { class: 'qa-thread' },
+          (props.result.interviews[activeIndex.value]?.questions?.length > 0
+            ? props.result.interviews[activeIndex.value].questions
+            : [props.result.interviews[activeIndex.value]?.question || '질문 없음']
           ).map((question, qIdx) => {
             const interview = props.result.interviews[activeIndex.value]
             const currentPlatform = getPlatformTab(activeIndex.value, qIdx)
@@ -1486,22 +1486,22 @@ const InterviewDisplay = {
             const isPlaceholder = isPlaceholderText(answerText)
 
             return h('div', { class: 'qa-pair', key: qIdx }, [
-              // Question Block
+              // 질문 블록
               h('div', { class: 'qa-question' }, [
                 h('div', { class: 'qa-badge q-badge' }, `Q${qIdx + 1}`),
                 h('div', { class: 'qa-content' }, [
-                  h('div', { class: 'qa-sender' }, 'Interviewer'),
+                  h('div', { class: 'qa-sender' }, '인터뷰어'),
                   h('div', { class: 'qa-text' }, question)
                 ])
               ]),
 
-              // Answer Block
+              // 답변 블록
               answerText && h('div', { class: ['qa-answer', { 'answer-placeholder': isPlaceholder }] }, [
                 h('div', { class: 'qa-badge a-badge' }, `A${qIdx + 1}`),
                 h('div', { class: 'qa-content' }, [
                   h('div', { class: 'qa-answer-header' }, [
-                    h('div', { class: 'qa-sender' }, interview?.name || 'Agent'),
-                    // 双平台切换按钮（仅在有真实双平台回答时显示）
+                    h('div', { class: 'qa-sender' }, interview?.name || '에이전트'),
+                    // 양 플랫폼 전환 버튼(실제 양 플랫폼 답변이 있을 때만 표시)
                     hasDualPlatform && h('div', { class: 'platform-switch' }, [
                       h('button', {
                         class: ['platform-btn', { active: currentPlatform === 'twitter' }],
@@ -1512,7 +1512,7 @@ const InterviewDisplay = {
                           h('line', { x1: '2', y1: '12', x2: '22', y2: '12' }),
                           h('path', { d: 'M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z' })
                         ]),
-                        h('span', {}, '世界1')
+                        h('span', {}, '세계 1')
                       ]),
                       h('button', {
                         class: ['platform-btn', { active: currentPlatform === 'reddit' }],
@@ -1521,7 +1521,7 @@ const InterviewDisplay = {
                         h('svg', { class: 'platform-icon', viewBox: '0 0 24 24', width: 12, height: 12, fill: 'none', stroke: 'currentColor', 'stroke-width': 2 }, [
                           h('path', { d: 'M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z' })
                         ]),
-                        h('span', {}, '世界2')
+                        h('span', {}, '세계 2')
                       ])
                     ])
                   ]),
@@ -1533,26 +1533,26 @@ const InterviewDisplay = {
                           .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
                           .replace(/\n/g, '<br>')
                   }),
-                  // Expand/Collapse Button（占位文本不显示）
+                  // 펼치기/접기 버튼(자리표시자 텍스트는 표시하지 않음)
                   !isPlaceholder && answerText.length > 400 && h('button', {
                     class: 'expand-answer-btn',
                     onClick: () => toggleAnswer(expandKey)
-                  }, isExpanded ? 'Show Less' : 'Show More')
+                  }, isExpanded ? '접기' : '더 보기')
                 ])
               ])
             ])
           })
         ),
-        
-        // Key Quotes Section
+
+        // 핵심 인용문 섹션
         props.result.interviews[activeIndex.value]?.quotes?.length > 0 && h('div', { class: 'quotes-section' }, [
-          h('div', { class: 'quotes-header' }, 'Key Quotes'),
+          h('div', { class: 'quotes-header' }, '핵심 인용문'),
           h('div', { class: 'quotes-list' },
             props.result.interviews[activeIndex.value].quotes.slice(0, 3).map((quote, qi) => {
               const cleanedQuote = cleanQuoteText(quote)
               const displayQuote = cleanedQuote.length > 200 ? cleanedQuote.substring(0, 200) + '...' : cleanedQuote
-              return h('blockquote', { 
-                key: qi, 
+              return h('blockquote', {
+                key: qi,
                 class: 'quote-item',
                 innerHTML: renderMarkdown(displayQuote)
               })
@@ -1561,10 +1561,10 @@ const InterviewDisplay = {
         ])
       ]),
 
-      // Summary Section (Collapsible)
+      // 요약 섹션(접기 가능)
       props.result.summary && h('div', { class: 'summary-section' }, [
-        h('div', { class: 'summary-header' }, 'Interview Summary'),
-        h('div', { 
+        h('div', { class: 'summary-header' }, '인터뷰 요약'),
+        h('div', {
           class: 'summary-content',
           innerHTML: renderMarkdown(props.result.summary.length > 500 ? props.result.summary.substring(0, 500) + '...' : props.result.summary)
         })
@@ -1573,100 +1573,100 @@ const InterviewDisplay = {
   }
 }
 
-// Quick Search Display Component - Enhanced with full data rendering
+// 빠른 검색 표시 컴포넌트 - 전체 데이터 렌더링을 강화했습니다
 const QuickSearchDisplay = {
   props: ['result', 'resultLength'],
   setup(props) {
     const activeTab = ref('facts') // 'facts', 'edges', 'nodes'
     const expandedFacts = ref(false)
     const INITIAL_SHOW_COUNT = 5
-    
-    // Check if there are edges or nodes to show tabs
+
+    // 탭을 보여줄 간선이나 노드가 있는지 확인합니다
     const hasEdges = computed(() => props.result.edges && props.result.edges.length > 0)
     const hasNodes = computed(() => props.result.nodes && props.result.nodes.length > 0)
     const showTabs = computed(() => hasEdges.value || hasNodes.value)
-    
-    // Format result size for display
+
+    // 표시용 결과 크기를 형식화합니다
     const formatSize = (length) => {
       if (!length) return ''
       if (length >= 1000) {
-        return `${(length / 1000).toFixed(1)}k chars`
+        return `${(length / 1000).toFixed(1)}천 자`
       }
-      return `${length} chars`
+      return `${length}자`
     }
-    
+
     return () => h('div', { class: 'quick-search-display' }, [
-      // Header Section
+      // 헤더 섹션
       h('div', { class: 'quicksearch-header' }, [
         h('div', { class: 'header-main' }, [
-          h('div', { class: 'header-title' }, 'Quick Search'),
+          h('div', { class: 'header-title' }, '빠른 검색'),
           h('div', { class: 'header-stats' }, [
             h('span', { class: 'stat-item' }, [
               h('span', { class: 'stat-value' }, props.result.count || props.result.facts.length),
-              h('span', { class: 'stat-label' }, 'Results')
+              h('span', { class: 'stat-label' }, '결과')
             ]),
             props.resultLength && h('span', { class: 'stat-divider' }, '·'),
             props.resultLength && h('span', { class: 'stat-size' }, formatSize(props.resultLength))
           ])
         ]),
         props.result.query && h('div', { class: 'header-query' }, [
-          h('span', { class: 'query-label' }, '搜索: '),
+          h('span', { class: 'query-label' }, '검색: '),
           h('span', { class: 'query-text' }, props.result.query)
         ])
       ]),
-      
-      // Tab Navigation (only show if there are edges or nodes)
+
+      // 탭 내비게이션(간선이나 노드가 있을 때만 표시)
       showTabs.value && h('div', { class: 'quicksearch-tabs' }, [
         h('button', {
           class: ['quicksearch-tab', { active: activeTab.value === 'facts' }],
           onClick: () => { activeTab.value = 'facts' }
         }, [
-          h('span', { class: 'tab-label' }, `事实 (${props.result.facts.length})`)
+          h('span', { class: 'tab-label' }, `사실 (${props.result.facts.length})`)
         ]),
         hasEdges.value && h('button', {
           class: ['quicksearch-tab', { active: activeTab.value === 'edges' }],
           onClick: () => { activeTab.value = 'edges' }
         }, [
-          h('span', { class: 'tab-label' }, `关系 (${props.result.edges.length})`)
+          h('span', { class: 'tab-label' }, `관계 (${props.result.edges.length})`)
         ]),
         hasNodes.value && h('button', {
           class: ['quicksearch-tab', { active: activeTab.value === 'nodes' }],
           onClick: () => { activeTab.value = 'nodes' }
         }, [
-          h('span', { class: 'tab-label' }, `节点 (${props.result.nodes.length})`)
+          h('span', { class: 'tab-label' }, `노드 (${props.result.nodes.length})`)
         ])
       ]),
-      
-      // Content Area
+
+      // 내용 영역
       h('div', { class: ['quicksearch-content', { 'no-tabs': !showTabs.value }] }, [
-        // Facts (always show if no tabs, or when facts tab is active)
+        // 사실(탭이 없을 때는 항상, 또는 사실 탭이 활성화되었을 때 표시)
         ((!showTabs.value) || activeTab.value === 'facts') && h('div', { class: 'facts-panel' }, [
           !showTabs.value && h('div', { class: 'panel-header' }, [
-            h('span', { class: 'panel-title' }, '搜索结果'),
-            h('span', { class: 'panel-count' }, `共 ${props.result.facts.length} 条`)
+            h('span', { class: 'panel-title' }, '검색 결과'),
+            h('span', { class: 'panel-count' }, `총 ${props.result.facts.length}개`)
           ]),
           props.result.facts.length > 0 ? h('div', { class: 'facts-list' },
-            (expandedFacts.value ? props.result.facts : props.result.facts.slice(0, INITIAL_SHOW_COUNT)).map((fact, i) => 
+            (expandedFacts.value ? props.result.facts : props.result.facts.slice(0, INITIAL_SHOW_COUNT)).map((fact, i) =>
               h('div', { class: 'fact-item', key: i }, [
                 h('span', { class: 'fact-number' }, i + 1),
                 h('div', { class: 'fact-content' }, fact)
               ])
             )
-          ) : h('div', { class: 'empty-state' }, '未找到相关结果'),
+          ) : h('div', { class: 'empty-state' }, '관련 결과를 찾지 못했습니다'),
           props.result.facts.length > INITIAL_SHOW_COUNT && h('button', {
             class: 'expand-btn',
             onClick: () => { expandedFacts.value = !expandedFacts.value }
-          }, expandedFacts.value ? `收起 ▲` : `展开全部 ${props.result.facts.length} 条 ▼`)
+          }, expandedFacts.value ? `접기 ▲` : `전체 보기 ${props.result.facts.length}개 ▼`)
         ]),
-        
-        // Edges Tab
+
+        // 간선 탭
         activeTab.value === 'edges' && hasEdges.value && h('div', { class: 'edges-panel' }, [
           h('div', { class: 'panel-header' }, [
-            h('span', { class: 'panel-title' }, '相关关系'),
-            h('span', { class: 'panel-count' }, `共 ${props.result.edges.length} 条`)
+            h('span', { class: 'panel-title' }, '관련 관계'),
+            h('span', { class: 'panel-count' }, `총 ${props.result.edges.length}개`)
           ]),
           h('div', { class: 'edges-list' },
-            props.result.edges.map((edge, i) => 
+            props.result.edges.map((edge, i) =>
               h('div', { class: 'edge-item', key: i }, [
                 h('span', { class: 'edge-source' }, edge.source),
                 h('span', { class: 'edge-arrow' }, [
@@ -1679,15 +1679,15 @@ const QuickSearchDisplay = {
             )
           )
         ]),
-        
-        // Nodes Tab
+
+        // 노드 탭
         activeTab.value === 'nodes' && hasNodes.value && h('div', { class: 'nodes-panel' }, [
           h('div', { class: 'panel-header' }, [
-            h('span', { class: 'panel-title' }, '相关节点'),
-            h('span', { class: 'panel-count' }, `共 ${props.result.nodes.length} 个`)
+            h('span', { class: 'panel-title' }, '관련 노드'),
+            h('span', { class: 'panel-count' }, `총 ${props.result.nodes.length}개`)
           ]),
           h('div', { class: 'nodes-grid' },
-            props.result.nodes.map((node, i) => 
+            props.result.nodes.map((node, i) =>
               h('div', { class: 'node-tag', key: i }, [
                 h('span', { class: 'node-name' }, node.name),
                 node.type && h('span', { class: 'node-type' }, node.type)
@@ -1700,7 +1700,7 @@ const QuickSearchDisplay = {
   }
 }
 
-// Computed
+// 계산 속성
 const statusClass = computed(() => {
   if (isComplete.value) return 'completed'
   if (agentLogs.value.length > 0) return 'processing'
@@ -1708,9 +1708,9 @@ const statusClass = computed(() => {
 })
 
 const statusText = computed(() => {
-  if (isComplete.value) return 'Completed'
-  if (agentLogs.value.length > 0) return 'Generating...'
-  return 'Waiting'
+  if (isComplete.value) return '완료'
+  if (agentLogs.value.length > 0) return '생성 중...'
+  return '대기 중'
 })
 
 const totalSections = computed(() => {
@@ -1744,7 +1744,7 @@ const displayLogs = computed(() => {
   return agentLogs.value
 })
 
-// Workflow steps overview (status-based, no nested cards)
+// 워크플로 단계 개요(상태 기반, 중첩 카드 없음)
 const activeSectionIndex = computed(() => {
   if (isComplete.value) return null
   if (currentSectionIndex.value) return currentSectionIndex.value
@@ -1764,35 +1764,35 @@ const isFinalizing = computed(() => {
   return !isComplete.value && isPlanningDone.value && totalSections.value > 0 && completedSections.value >= totalSections.value
 })
 
-// 当前活跃的步骤（用于顶部显示）
+// 현재 활성 단계(상단 표시용)
 const activeStep = computed(() => {
   const steps = workflowSteps.value
-  // 找到当前 active 的步骤
+  // 현재 활성 단계를 찾습니다
   const active = steps.find(s => s.status === 'active')
   if (active) return active
-  
-  // 如果没有 active，返回最后一个 done 的步骤
+
+  // 활성 단계가 없으면 마지막 완료 단계를 반환합니다
   const doneSteps = steps.filter(s => s.status === 'done')
   if (doneSteps.length > 0) return doneSteps[doneSteps.length - 1]
-  
-  // 否则返回第一个步骤
-  return steps[0] || { noLabel: '--', title: '等待开始', status: 'todo', meta: '' }
+
+  // 그렇지 않으면 첫 번째 단계를 반환합니다
+  return steps[0] || { noLabel: '--', title: '시작 대기', status: 'todo', meta: '' }
 })
 
 const workflowSteps = computed(() => {
   const steps = []
 
-  // Planning / Outline
+  // 기획 / 개요
   const planningStatus = isPlanningDone.value ? 'done' : (isPlanningStarted.value ? 'active' : 'todo')
   steps.push({
     key: 'planning',
     noLabel: 'PL',
-    title: 'Planning / Outline',
+    title: '기획 / 개요',
     status: planningStatus,
-    meta: planningStatus === 'active' ? 'IN PROGRESS' : ''
+    meta: planningStatus === 'active' ? '진행 중' : ''
   })
 
-  // Sections (if outline exists)
+  // 섹션(개요가 있으면)
   const sections = reportOutline.value?.sections || []
   sections.forEach((section, i) => {
     const idx = i + 1
@@ -1805,40 +1805,40 @@ const workflowSteps = computed(() => {
       noLabel: String(idx).padStart(2, '0'),
       title: section.title,
       status,
-      meta: status === 'active' ? 'IN PROGRESS' : ''
+      meta: status === 'active' ? '진행 중' : ''
     })
   })
 
-  // Complete
+  // 완료
   const completeStatus = isComplete.value ? 'done' : (isFinalizing.value ? 'active' : 'todo')
   steps.push({
     key: 'complete',
     noLabel: 'OK',
-    title: 'Complete',
+    title: '완료',
     status: completeStatus,
-    meta: completeStatus === 'active' ? 'FINALIZING' : ''
+    meta: completeStatus === 'active' ? '마무리 중' : ''
   })
 
   return steps
 })
 
-// Methods
+// 메서드
 const addLog = (msg) => {
   emit('add-log', msg)
 }
 
-const isSectionCompleted = (sectionIndex) => {
+const isSection완료 = (sectionIndex) => {
   return !!generatedSections.value[sectionIndex]
 }
 
 const formatTime = (timestamp) => {
   if (!timestamp) return ''
   try {
-    return new Date(timestamp).toLocaleTimeString('en-US', { 
-      hour12: false, 
-      hour: '2-digit', 
-      minute: '2-digit', 
-      second: '2-digit' 
+    return new Date(timestamp).toLocaleTimeString('en-US', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
     })
   } catch {
     return ''
@@ -1856,8 +1856,8 @@ const formatParams = (params) => {
 
 const formatResultSize = (length) => {
   if (!length) return ''
-  if (length < 1000) return `${length} chars`
-  return `${(length / 1000).toFixed(1)}k chars`
+  if (length < 1000) return `${length}자`
+  return `${(length / 1000).toFixed(1)}천 자`
 }
 
 const truncateText = (text, maxLen) => {
@@ -1868,26 +1868,26 @@ const truncateText = (text, maxLen) => {
 
 const renderMarkdown = (content) => {
   if (!content) return ''
-  
-  // 去掉开头的二级标题（## xxx），因为章节标题已在外层显示
+
+  // 시작 부분의 2단계 제목(## xxx)을 제거합니다. 섹션 제목은 바깥에서 이미 표시됩니다
   let processedContent = content.replace(/^##\s+.+\n+/, '')
-  
-  // 处理代码块
+
+  // 코드 블록을 처리합니다
   let html = processedContent.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="code-block"><code>$2</code></pre>')
-  
-  // 处理行内代码
+
+  // 인라인 코드를 처리합니다
   html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
-  
-  // 处理标题
+
+  // 제목을 처리합니다
   html = html.replace(/^#### (.+)$/gm, '<h5 class="md-h5">$1</h5>')
   html = html.replace(/^### (.+)$/gm, '<h4 class="md-h4">$1</h4>')
   html = html.replace(/^## (.+)$/gm, '<h3 class="md-h3">$1</h3>')
   html = html.replace(/^# (.+)$/gm, '<h2 class="md-h2">$1</h2>')
-  
-  // 处理引用块
+
+  // 인용 블록을 처리합니다
   html = html.replace(/^> (.+)$/gm, '<blockquote class="md-quote">$1</blockquote>')
-  
-  // 处理列表 - 支持子列表
+
+  // 목록을 처리합니다 - 하위 목록을 지원합니다
   html = html.replace(/^(\s*)- (.+)$/gm, (match, indent, text) => {
     const level = Math.floor(indent.length / 2)
     return `<li class="md-li" data-level="${level}">${text}</li>`
@@ -1897,52 +1897,52 @@ const renderMarkdown = (content) => {
     return `<li class="md-oli" data-level="${level}">${text}</li>`
   })
 
-  // 包装无序列表
+  // 순서 없는 목록을 감쌉니다
   html = html.replace(/(<li class="md-li"[^>]*>.*?<\/li>\s*)+/g, '<ul class="md-ul">$&</ul>')
-  // 包装有序列表
+  // 순서 있는 목록을 감쌉니다
   html = html.replace(/(<li class="md-oli"[^>]*>.*?<\/li>\s*)+/g, '<ol class="md-ol">$&</ol>')
 
-  // 清理列表项之间的所有空白
+  // 목록 항목 사이의 모든 공백을 정리합니다
   html = html.replace(/<\/li>\s+<li/g, '</li><li')
-  // 清理列表开始标签后的空白
+  // 목록 시작 태그 뒤의 공백을 정리합니다
   html = html.replace(/<ul class="md-ul">\s+/g, '<ul class="md-ul">')
   html = html.replace(/<ol class="md-ol">\s+/g, '<ol class="md-ol">')
-  // 清理列表结束标签前的空白
+  // 목록 종료 태그 앞의 공백을 정리합니다
   html = html.replace(/\s+<\/ul>/g, '</ul>')
   html = html.replace(/\s+<\/ol>/g, '</ol>')
-  
-  // 处理粗体和斜体
+
+  // 굵게와 기울임을 처리합니다
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
   html = html.replace(/_(.+?)_/g, '<em>$1</em>')
-  
-  // 处理分隔线
+
+  // 구분선을 처리합니다
   html = html.replace(/^---$/gm, '<hr class="md-hr">')
-  
-  // 处理换行 - 空行变成段落分隔，单换行变成 <br>
+
+  // 줄바꿈을 처리합니다 - 빈 줄은 문단 구분, 단일 줄바꿈은 <br>로 변환합니다
   html = html.replace(/\n\n/g, '</p><p class="md-p">')
   html = html.replace(/\n/g, '<br>')
-  
-  // 包装在段落中
+
+  // 문단으로 감쌉니다
   html = '<p class="md-p">' + html + '</p>'
-  
-  // 清理空段落
+
+  // 빈 문단을 정리합니다
   html = html.replace(/<p class="md-p"><\/p>/g, '')
   html = html.replace(/<p class="md-p">(<h[2-5])/g, '$1')
   html = html.replace(/(<\/h[2-5]>)<\/p>/g, '$1')
   html = html.replace(/<p class="md-p">(<ul|<ol|<blockquote|<pre|<hr)/g, '$1')
   html = html.replace(/(<\/ul>|<\/ol>|<\/blockquote>|<\/pre>)<\/p>/g, '$1')
-  // 清理块级元素前后的 <br> 标签
+  // 블록 요소 앞뒤의 <br> 태그를 정리합니다
   html = html.replace(/<br>\s*(<ul|<ol|<blockquote)/g, '$1')
   html = html.replace(/(<\/ul>|<\/ol>|<\/blockquote>)\s*<br>/g, '$1')
-  // 清理 <p><br> 紧跟块级元素的情况（多余空行导致）
+  // 블록 요소 바로 뒤에 붙은 <p><br> 상황을 정리합니다(불필요한 빈 줄 때문)
   html = html.replace(/<p class="md-p">(<br>\s*)+(<ul|<ol|<blockquote|<pre|<hr)/g, '$2')
-  // 清理连续的 <br> 标签
+  // 연속된 <br> 태그를 정리합니다
   html = html.replace(/(<br>\s*){2,}/g, '<br>')
-  // 清理块级元素后紧跟的段落开始标签前的 <br>
+  // 블록 요소 뒤에 바로 이어지는 문단 시작 태그 앞의 <br>을 정리합니다
   html = html.replace(/(<\/ol>|<\/ul>|<\/blockquote>)<br>(<p|<div)/g, '$1$2')
 
-  // 修复非连续有序列表的编号：当单项 <ol> 被段落内容隔开时，保持编号递增
+  // 비연속 순서 있는 목록의 번호를 수정합니다. 단일 <ol>이 문단 내용으로 분리되어도 번호를 유지합니다
   const tokens = html.split(/(<ol class="md-ol">(?:<li class="md-oli"[^>]*>[\s\S]*?<\/li>)+<\/ol>)/g)
   let olCounter = 0
   let inSequence = false
@@ -1991,80 +1991,80 @@ const getConnectorClass = (log, idx, total) => {
 
 const getActionLabel = (action) => {
   const labels = {
-    'report_start': 'Report Started',
-    'planning_start': 'Planning',
-    'planning_complete': 'Plan Complete',
-    'section_start': 'Section Start',
-    'section_content': 'Content Ready',
-    'section_complete': 'Section Done',
-    'tool_call': 'Tool Call',
-    'tool_result': 'Tool Result',
-    'llm_response': 'LLM Response',
-    'report_complete': 'Complete'
+    'report_start': '보고서 시작',
+    'planning_start': '기획',
+    'planning_complete': '기획 완료',
+    'section_start': '섹션 시작',
+    'section_content': '내용 준비',
+    'section_complete': '섹션 완료',
+    'tool_call': '도구 호출',
+    'tool_result': '도구 결과',
+    'llm_response': 'LLM 응답',
+    'report_complete': '완료'
   }
   return labels[action] || action
 }
 
 const getLogLevelClass = (log) => {
-  if (log.includes('ERROR') || log.includes('错误')) return 'error'
-  if (log.includes('WARNING') || log.includes('警告')) return 'warning'
-  // INFO 使用默认颜色，不标记为 success
+  if (log.includes('ERROR') || log.includes('오류')) return 'error'
+  if (log.includes('WARNING') || log.includes('경고')) return 'warning'
+  // INFO는 기본 색상을 사용하며 success로 표시하지 않습니다
   return ''
 }
 
-// Polling
+// 폴링
 let agentLogTimer = null
 let consoleLogTimer = null
 
 const fetchAgentLog = async () => {
   if (!props.reportId) return
-  
+
   try {
     const res = await getAgentLog(props.reportId, agentLogLine.value)
-    
+
     if (res.success && res.data) {
       const newLogs = res.data.logs || []
-      
+
       if (newLogs.length > 0) {
         newLogs.forEach(log => {
           agentLogs.value.push(log)
-          
+
           if (log.action === 'planning_complete' && log.details?.outline) {
             reportOutline.value = log.details.outline
           }
-          
+
           if (log.action === 'section_start') {
             currentSectionIndex.value = log.section_index
           }
 
-          // section_complete - 章节生成完成
+          // section_complete - 섹션 생성 완료
           if (log.action === 'section_complete') {
             if (log.details?.content) {
               generatedSections.value[log.section_index] = log.details.content
-              // 自动展开刚生成的章节
+              // 새로 생성된 섹션을 자동으로 펼칩니다
               expandedContent.value.add(log.section_index - 1)
               currentSectionIndex.value = null
             }
           }
-          
+
           if (log.action === 'report_complete') {
             isComplete.value = true
-            currentSectionIndex.value = null  // 确保清除 loading 状态
+            currentSectionIndex.value = null  // 로딩 상태가 확실히 지워지도록 합니다
             emit('update-status', 'completed')
             stopPolling()
-            // 滚动逻辑统一在循环结束后的 nextTick 中处理
+            // 스크롤 로직은 반복이 끝난 뒤 nextTick에서 일괄 처리합니다
           }
-          
+
           if (log.action === 'report_start') {
             startTime.value = new Date(log.timestamp)
           }
         })
-        
+
         agentLogLine.value = res.data.from_line + newLogs.length
-        
+
         nextTick(() => {
           if (rightPanel.value) {
-            // 如果任务已完成，滚动到顶部；否则滚动到底部跟随最新日志
+            // 작업이 완료되면 상단으로, 아니면 하단으로 이동해 최신 로그를 따라갑니다
             if (isComplete.value) {
               rightPanel.value.scrollTop = 0
             } else {
@@ -2075,43 +2075,43 @@ const fetchAgentLog = async () => {
       }
     }
   } catch (err) {
-    console.warn('Failed to fetch agent log:', err)
+    console.warn('에이전트 로그를 불러오지 못했습니다:', err)
   }
 }
 
-// 提取最终答案内容 - 从 LLM response 中提取章节内容
+// 최종 답변 내용을 추출합니다 - LLM 응답에서 섹션 내용을 추출합니다
 const extractFinalContent = (response) => {
   if (!response) return null
-  
-  // 尝试提取 <final_answer> 标签内的内容
+
+  // <final_answer> 태그 안의 내용을 추출해 봅니다
   const finalAnswerTagMatch = response.match(/<final_answer>([\s\S]*?)<\/final_answer>/)
   if (finalAnswerTagMatch) {
     return finalAnswerTagMatch[1].trim()
   }
-  
-  // 尝试找 Final Answer: 后面的内容（支持多种格式）
-  // 格式1: Final Answer:\n\n内容
-  // 格式2: Final Answer: 内容
+
+  // Final Answer: 뒤의 내용을 찾아 봅니다(여러 형식 지원)
+  // 형식 1: Final Answer:\n\n내용
+  // 형식 2: Final Answer: 내용
   const finalAnswerMatch = response.match(/Final\s*Answer:\s*\n*([\s\S]*)$/i)
   if (finalAnswerMatch) {
     return finalAnswerMatch[1].trim()
   }
-  
-  // 尝试找 最终答案: 后面的内容
+
+  // 최종 답변: 뒤의 내용을 찾아 봅니다
   const chineseFinalMatch = response.match(/最终答案[:：]\s*\n*([\s\S]*)$/i)
   if (chineseFinalMatch) {
     return chineseFinalMatch[1].trim()
   }
-  
-  // 如果以 ## 或 # 或 > 开头，可能是直接的 markdown 内容
+
+  // ##, #, > 로 시작하면 직접 입력된 markdown일 수 있습니다
   const trimmedResponse = response.trim()
   if (trimmedResponse.match(/^[#>]/)) {
     return trimmedResponse
   }
-  
-  // 如果内容较长且包含markdown格式，尝试移除思考过程后返回
+
+  // 내용이 길고 markdown 형식이 포함되면 사고 과정을 제거한 뒤 반환을 시도합니다
   if (response.length > 300 && (response.includes('**') || response.includes('>'))) {
-    // 移除 Thought: 开头的思考过程
+    // Thought:로 시작하는 사고 과정을 제거합니다
     const thoughtMatch = response.match(/^Thought:[\s\S]*?(?=\n\n[^T]|\n\n$)/i)
     if (thoughtMatch) {
       const afterThought = response.substring(thoughtMatch[0].length).trim()
@@ -2120,23 +2120,23 @@ const extractFinalContent = (response) => {
       }
     }
   }
-  
+
   return null
 }
 
 const fetchConsoleLog = async () => {
   if (!props.reportId) return
-  
+
   try {
     const res = await getConsoleLog(props.reportId, consoleLogLine.value)
-    
+
     if (res.success && res.data) {
       const newLogs = res.data.logs || []
-      
+
       if (newLogs.length > 0) {
         consoleLogs.value.push(...newLogs)
         consoleLogLine.value = res.data.from_line + newLogs.length
-        
+
         nextTick(() => {
           if (logContent.value) {
             logContent.value.scrollTop = logContent.value.scrollHeight
@@ -2145,16 +2145,16 @@ const fetchConsoleLog = async () => {
       }
     }
   } catch (err) {
-    console.warn('Failed to fetch console log:', err)
+    console.warn('콘솔 로그를 불러오지 못했습니다:', err)
   }
 }
 
 const startPolling = () => {
   if (agentLogTimer || consoleLogTimer) return
-  
+
   fetchAgentLog()
   fetchConsoleLog()
-  
+
   agentLogTimer = setInterval(fetchAgentLog, 2000)
   consoleLogTimer = setInterval(fetchConsoleLog, 1500)
 }
@@ -2170,10 +2170,10 @@ const stopPolling = () => {
   }
 }
 
-// Lifecycle
+// 라이프사이클
 onMounted(() => {
   if (props.reportId) {
-    addLog(`Report Agent initialized: ${props.reportId}`)
+    addLog(`보고서 에이전트를 초기화했습니다: ${props.reportId}`)
     startPolling()
   }
 })
@@ -2196,7 +2196,7 @@ watch(() => props.reportId, (newId) => {
     collapsedSections.value = new Set()
     isComplete.value = false
     startTime.value = null
-    
+
     startPolling()
   }
 }, { immediate: true })
@@ -2212,14 +2212,14 @@ watch(() => props.reportId, (newId) => {
   overflow: hidden;
 }
 
-/* Main Split Layout */
+/* 메인 분할 레이아웃 */
 .main-split-layout {
   flex: 1;
   display: flex;
   overflow: hidden;
 }
 
-/* Panel Headers */
+/* 패널 헤더 */
 .panel-header {
   display: flex;
   align-items: center;
@@ -2284,7 +2284,7 @@ watch(() => props.reportId, (newId) => {
   flex-shrink: 0;
 }
 
-/* Panel header status variants */
+/* 패널 헤더 상태 변형 */
 .panel-header--active {
   background: #FAFAFA;
   border-color: #1F2937;
@@ -2315,7 +2315,7 @@ watch(() => props.reportId, (newId) => {
   color: #9CA3AF;
 }
 
-/* Left Panel - Report Style */
+/* 왼쪽 패널 - 보고서 스타일 */
 .left-panel.report-style {
   width: 45%;
   min-width: 450px;
@@ -2349,7 +2349,7 @@ watch(() => props.reportId, (newId) => {
   background: rgba(0, 0, 0, 0.25);
 }
 
-/* Report Header */
+/* 보고서 헤더 */
 .report-content-wrapper {
   max-width: 800px;
   margin: 0 auto;
@@ -2410,7 +2410,7 @@ watch(() => props.reportId, (newId) => {
   width: 100%;
 }
 
-/* Sections List */
+/* 섹션 목록 */
 .sections-list {
   display: flex;
   flex-direction: column;
@@ -2456,7 +2456,7 @@ watch(() => props.reportId, (newId) => {
 .section-number {
   font-family: 'JetBrains Mono', monospace;
   font-size: 16px;
-  color: #9CA3AF; /* 深灰色，不随状态变化 */
+  color: #9CA3AF; /* 진회색, 상태에 따라 변하지 않습니다 */
   font-weight: 500;
 }
 
@@ -2469,7 +2469,7 @@ watch(() => props.reportId, (newId) => {
   transition: color 0.3s ease;
 }
 
-/* States */
+/* 상태 */
 .report-section-item.is-pending .section-title {
   color: #D1D5DB;
 }
@@ -2484,7 +2484,7 @@ watch(() => props.reportId, (newId) => {
   overflow: hidden;
 }
 
-/* Generated Content */
+/* 생성된 콘텐츠 */
 .generated-content {
   font-family: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
   font-size: 14px;
@@ -2546,7 +2546,7 @@ watch(() => props.reportId, (newId) => {
   color: #111827;
 }
 
-/* Loading State */
+/* 로딩 상태 */
 .loading-state {
   display: flex;
   align-items: center;
@@ -2589,7 +2589,7 @@ watch(() => props.reportId, (newId) => {
   to { transform: rotate(360deg); }
 }
 
-/* Content Styles Override for this view */
+/* 이 뷰의 콘텐츠 스타일 덮어쓰기 */
 .generated-content :deep(.md-h2) {
   font-family: 'Times New Roman', Times, serif;
   font-size: 18px;
@@ -2597,7 +2597,7 @@ watch(() => props.reportId, (newId) => {
 }
 
 
-/* Slide Content Transition */
+/* 슬라이드 콘텐츠 전환 */
 .slide-content-enter-active {
   transition: opacity 0.3s ease-out;
 }
@@ -2616,7 +2616,7 @@ watch(() => props.reportId, (newId) => {
   opacity: 1;
 }
 
-/* Waiting Placeholder */
+/* 대기 중 자리표시자 */
 .waiting-placeholder {
   flex: 1;
   display: flex;
@@ -2660,7 +2660,7 @@ watch(() => props.reportId, (newId) => {
   font-size: 14px;
 }
 
-/* Right Panel */
+/* 오른쪽 패널 */
 .right-panel {
   flex: 1;
   background: #FFFFFF;
@@ -2668,7 +2668,7 @@ watch(() => props.reportId, (newId) => {
   display: flex;
   flex-direction: column;
 
-  /* Functional palette (low saturation, status-based) */
+  /* 기능 팔레트(저채도, 상태 기반) */
   --wf-border: #E5E7EB;
   --wf-divider: #F3F4F6;
 
@@ -2711,7 +2711,7 @@ watch(() => props.reportId, (newId) => {
   font-family: 'JetBrains Mono', monospace;
 }
 
-/* Workflow Overview */
+/* 워크플로 개요 */
 .workflow-overview {
   padding: 16px 20px 0 20px;
 }
@@ -2891,7 +2891,7 @@ watch(() => props.reportId, (newId) => {
   margin: 14px 0 0 0;
 }
 
-/* Workflow Timeline */
+/* 워크플로 타임라인 */
 .workflow-timeline {
   padding: 14px 20px 24px;
   flex: 1;
@@ -2958,7 +2958,7 @@ watch(() => props.reportId, (newId) => {
   margin-top: -2px;
 }
 
-/* Connector dot: status only */
+/* 연결 점: 상태만 표시 */
 .dot-active {
   background: var(--wf-active-dot);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
@@ -3040,7 +3040,7 @@ watch(() => props.reportId, (newId) => {
   font-family: 'JetBrains Mono', monospace;
 }
 
-/* Timeline Body Elements */
+/* 타임라인 본문 요소 */
 .info-row {
   display: flex;
   gap: 8px;
@@ -3151,7 +3151,7 @@ watch(() => props.reportId, (newId) => {
   flex-shrink: 0;
 }
 
-/* Tool Colors - Purple (Deep Insight) */
+/* 도구 색상 - 보라색(심층 분석) */
 .tool-badge.tool-purple {
   background: linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%);
   border-color: #C4B5FD;
@@ -3161,7 +3161,7 @@ watch(() => props.reportId, (newId) => {
   stroke: #7C3AED;
 }
 
-/* Tool Colors - Blue (Panorama Search) */
+/* 도구 색상 - 파란색(전방위 검색) */
 .tool-badge.tool-blue {
   background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);
   border-color: #93C5FD;
@@ -3171,7 +3171,7 @@ watch(() => props.reportId, (newId) => {
   stroke: #2563EB;
 }
 
-/* Tool Colors - Green (Agent Interview) */
+/* 도구 색상 - 초록색(에이전트 인터뷰) */
 .tool-badge.tool-green {
   background: linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%);
   border-color: #86EFAC;
@@ -3181,7 +3181,7 @@ watch(() => props.reportId, (newId) => {
   stroke: #16A34A;
 }
 
-/* Tool Colors - Orange (Quick Search) */
+/* 도구 색상 - 주황색(빠른 검색) */
 .tool-badge.tool-orange {
   background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);
   border-color: #FDBA74;
@@ -3191,7 +3191,7 @@ watch(() => props.reportId, (newId) => {
   stroke: #EA580C;
 }
 
-/* Tool Colors - Cyan (Graph Stats) */
+/* 도구 색상 - 청록색(그래프 통계) */
 .tool-badge.tool-cyan {
   background: linear-gradient(135deg, #ECFEFF 0%, #CFFAFE 100%);
   border-color: #67E8F9;
@@ -3201,7 +3201,7 @@ watch(() => props.reportId, (newId) => {
   stroke: #0891B2;
 }
 
-/* Tool Colors - Pink (Entity Query) */
+/* 도구 색상 - 분홍색(엔티티 조회) */
 .tool-badge.tool-pink {
   background: linear-gradient(135deg, #FDF2F8 0%, #FCE7F3 100%);
   border-color: #F9A8D4;
@@ -3211,7 +3211,7 @@ watch(() => props.reportId, (newId) => {
   stroke: #DB2777;
 }
 
-/* Tool Colors - Gray (Default) */
+/* 도구 색상 - 회색(기본) */
 .tool-badge.tool-gray {
   background: linear-gradient(135deg, #F9FAFB 0%, #F3F4F6 100%);
   border-color: #D1D5DB;
@@ -3243,7 +3243,7 @@ watch(() => props.reportId, (newId) => {
   padding: 10px;
 }
 
-/* Unified Action Buttons */
+/* 통합 동작 버튼 */
 .action-btn {
   background: #F3F4F6;
   border: 1px solid #E5E7EB;
@@ -3263,7 +3263,7 @@ watch(() => props.reportId, (newId) => {
   border-color: #D1D5DB;
 }
 
-/* Result Wrapper */
+/* 결과 래퍼 */
 .result-wrapper {
   background: transparent;
   border: none;
@@ -3319,9 +3319,9 @@ watch(() => props.reportId, (newId) => {
   color: #6B7280;
 }
 
-/* Legacy toggle-raw removed - using unified .action-btn */
+/* 이전 toggle-raw는 제거했고 통합된 .action-btn를 사용합니다 */
 
-/* LLM Response */
+/* LLM 응답 */
 .llm-meta {
   display: flex;
   gap: 8px;
@@ -3383,7 +3383,7 @@ watch(() => props.reportId, (newId) => {
   border-radius: 6px;
 }
 
-/* Complete Banner */
+/* 완료 배너 */
 .complete-banner {
   display: flex;
   align-items: center;
@@ -3427,7 +3427,7 @@ watch(() => props.reportId, (newId) => {
   transform: translateX(4px);
 }
 
-/* Workflow Empty */
+/* 워크플로 비어 있음 */
 .workflow-empty {
   display: flex;
   flex-direction: column;
@@ -3452,7 +3452,7 @@ watch(() => props.reportId, (newId) => {
   50% { transform: scale(1.2); opacity: 0.5; }
 }
 
-/* Timeline Transitions */
+/* 타임라인 전환 */
 .timeline-item-enter-active {
   transition: all 0.4s ease;
 }
@@ -3462,9 +3462,9 @@ watch(() => props.reportId, (newId) => {
   transform: translateX(-20px);
 }
 
-/* ========== Structured Result Display Components ========== */
+/* ========== 구조화된 결과 표시 컴포넌트 ========== */
 
-/* Common Styles - using :deep() for dynamic components */
+/* 공통 스타일 - 동적 컴포넌트에는 :deep()을 사용합니다 */
 :deep(.stat-row) {
   display: flex;
   gap: 8px;
@@ -3562,7 +3562,7 @@ watch(() => props.reportId, (newId) => {
   border-bottom: 1px solid #F3F4F6;
 }
 
-/* Facts Section */
+/* 사실 섹션 */
 :deep(.facts-section) {
   margin-bottom: 14px;
 }
@@ -3611,7 +3611,7 @@ watch(() => props.reportId, (newId) => {
   line-height: 1.6;
 }
 
-/* Entities Section */
+/* 엔티티 섹션 */
 :deep(.entities-section) {
   margin-bottom: 14px;
 }
@@ -3646,7 +3646,7 @@ watch(() => props.reportId, (newId) => {
   border-radius: 3px;
 }
 
-/* Relations Section */
+/* 관계 섹션 */
 :deep(.relations-section) {
   margin-bottom: 14px;
 }
@@ -3682,12 +3682,12 @@ watch(() => props.reportId, (newId) => {
   border-radius: 10px;
 }
 
-/* ========== Interview Display - Conversation Style ========== */
+/* ========== 인터뷰 표시 - 대화형 스타일 ========== */
 :deep(.interview-display) {
   padding: 0;
 }
 
-/* Header */
+/* 헤더 */
 :deep(.interview-display .interview-header) {
   padding: 0;
   background: transparent;
@@ -3752,7 +3752,7 @@ watch(() => props.reportId, (newId) => {
   line-height: 1.5;
 }
 
-/* Agent Tabs - Card Style */
+/* 에이전트 탭 - 카드 스타일 */
 :deep(.interview-display .agent-tabs) {
   display: flex;
   gap: 8px;
@@ -3840,13 +3840,13 @@ watch(() => props.reportId, (newId) => {
   text-overflow: ellipsis;
 }
 
-/* Interview Detail */
+/* 인터뷰 상세 */
 :deep(.interview-display .interview-detail) {
   padding: 12px 0;
   background: transparent;
 }
 
-/* Agent Profile - No card */
+/* 에이전트 프로필 - 카드 없음 */
 :deep(.interview-display .agent-profile) {
   display: flex;
   gap: 12px;
@@ -3898,7 +3898,7 @@ watch(() => props.reportId, (newId) => {
   overflow: hidden;
 }
 
-/* Selection Reason - 选择理由 */
+/* 선택 이유 */
 :deep(.interview-display .selection-reason) {
   background: #F8FAFC;
   border: 1px solid #E2E8F0;
@@ -3922,7 +3922,7 @@ watch(() => props.reportId, (newId) => {
   line-height: 1.6;
 }
 
-/* Q&A Thread - Clean list */
+/* Q&A 스레드 - 깔끔한 목록 */
 :deep(.interview-display .qa-thread) {
   display: flex;
   flex-direction: column;
@@ -4013,7 +4013,7 @@ watch(() => props.reportId, (newId) => {
   margin-bottom: 4px;
 }
 
-/* Platform Switch */
+/* 플랫폼 전환 */
 :deep(.interview-display .platform-switch) {
   display: flex;
   gap: 2px;
@@ -4084,7 +4084,7 @@ watch(() => props.reportId, (newId) => {
   border-bottom-style: solid;
 }
 
-/* Quotes Section - Clean list */
+/* 인용문 섹션 - 깔끔한 목록 */
 :deep(.interview-display .quotes-section) {
   background: transparent;
   border: none;
@@ -4121,7 +4121,7 @@ watch(() => props.reportId, (newId) => {
   line-height: 1.5;
 }
 
-/* Summary Section */
+/* 요약 섹션 */
 :deep(.interview-display .summary-section) {
   margin-top: 20px;
   padding: 16px 0 0 0;
@@ -4146,7 +4146,7 @@ watch(() => props.reportId, (newId) => {
   line-height: 1.6;
 }
 
-/* Markdown styles in summary */
+/* 요약의 마크다운 스타일 */
 :deep(.interview-display .summary-content h2),
 :deep(.interview-display .summary-content h3),
 :deep(.interview-display .summary-content h4),
@@ -4200,7 +4200,7 @@ watch(() => props.reportId, (newId) => {
   font-style: italic;
 }
 
-/* Markdown styles in quotes */
+/* 인용문의 마크다운 스타일 */
 :deep(.interview-display .quote-item strong) {
   font-weight: 600;
   color: #374151;
@@ -4210,7 +4210,7 @@ watch(() => props.reportId, (newId) => {
   font-style: italic;
 }
 
-/* ========== Enhanced Insight Display Styles ========== */
+/* ========== 강화된 인사이트 표시 스타일 ========== */
 :deep(.insight-display) {
   padding: 0;
 }
@@ -4397,7 +4397,7 @@ watch(() => props.reportId, (newId) => {
   line-height: 1.6;
 }
 
-/* Entity Tag Styles - Compact multi-column layout */
+/* 엔티티 태그 스타일 - 컴팩트한 다열 레이아웃 */
 :deep(.insight-display .entity-tag) {
   display: inline-flex;
   align-items: center;
@@ -4435,7 +4435,7 @@ watch(() => props.reportId, (newId) => {
   margin-left: 2px;
 }
 
-/* Legacy entity card styles for backwards compatibility */
+/* 이전 버전 호환성을 위한 기존 엔티티 카드 스타일 */
 :deep(.insight-display .entity-card) {
   padding: 12px;
   background: #F9FAFB;
@@ -4486,7 +4486,7 @@ watch(() => props.reportId, (newId) => {
   line-height: 1.5;
 }
 
-/* Relation Item Styles */
+/* 관계 항목 스타일 */
 :deep(.insight-display .relation-item) {
   display: flex;
   align-items: center;
@@ -4531,7 +4531,7 @@ watch(() => props.reportId, (newId) => {
   white-space: nowrap;
 }
 
-/* Sub-query Styles */
+/* 하위 질의 스타일 */
 :deep(.insight-display .subquery-item) {
   display: flex;
   gap: 10px;
@@ -4558,7 +4558,7 @@ watch(() => props.reportId, (newId) => {
   line-height: 1.5;
 }
 
-/* Expand Button */
+/* 펼치기 버튼 */
 :deep(.insight-display .expand-btn),
 :deep(.panorama-display .expand-btn),
 :deep(.quick-search-display .expand-btn) {
@@ -4585,7 +4585,7 @@ watch(() => props.reportId, (newId) => {
   border-color: #D1D5DB;
 }
 
-/* Empty State */
+/* 빈 상태 */
 :deep(.insight-display .empty-state),
 :deep(.panorama-display .empty-state),
 :deep(.quick-search-display .empty-state) {
@@ -4595,7 +4595,7 @@ watch(() => props.reportId, (newId) => {
   color: #9CA3AF;
 }
 
-/* ========== Enhanced Panorama Display Styles ========== */
+/* ========== 강화된 파노라마 표시 스타일 ========== */
 :deep(.panorama-display) {
   padding: 0;
 }
@@ -4796,7 +4796,7 @@ watch(() => props.reportId, (newId) => {
   display: block;
 }
 
-/* Entities Grid */
+/* 엔티티 그리드 */
 :deep(.panorama-display .entities-grid) {
   display: flex;
   flex-wrap: wrap;
@@ -4827,7 +4827,7 @@ watch(() => props.reportId, (newId) => {
   border-radius: 4px;
 }
 
-/* ========== Enhanced Quick Search Display Styles ========== */
+/* ========== 강화된 빠른 검색 표시 스타일 ========== */
 :deep(.quick-search-display) {
   padding: 0;
 }
@@ -4943,7 +4943,7 @@ watch(() => props.reportId, (newId) => {
   border-radius: 0 0 8px 8px;
 }
 
-/* When there are no tabs, content connects directly to header */
+/* 탭이 없으면 내용이 헤더와 바로 연결됩니다 */
 :deep(.quicksearch-content.no-tabs) {
   border-top: none;
 }
@@ -5015,7 +5015,7 @@ watch(() => props.reportId, (newId) => {
   line-height: 1.6;
 }
 
-/* Edges Panel */
+/* 간선 패널 */
 :deep(.quick-search-display .edges-list) {
   display: flex;
   flex-direction: column;
@@ -5066,7 +5066,7 @@ watch(() => props.reportId, (newId) => {
   white-space: nowrap;
 }
 
-/* Nodes Grid */
+/* 노드 그리드 */
 :deep(.quick-search-display .nodes-grid) {
   display: flex;
   flex-wrap: wrap;
@@ -5097,7 +5097,7 @@ watch(() => props.reportId, (newId) => {
   border-radius: 4px;
 }
 
-/* Console Logs - 与 Step3Simulation.vue 保持一致 */
+/* 콘솔 로그 - Step3Simulation.vue와 일치시킵니다 */
 .console-logs {
   background: #000;
   color: #DDD;

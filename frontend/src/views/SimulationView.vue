@@ -1,6 +1,6 @@
 <template>
   <div class="main-view">
-    <!-- Header -->
+    <!-- 헤더 -->
     <header class="app-header">
       <div class="header-left">
         <div class="brand" @click="router.push('/')">MIROFISH</div>
@@ -15,15 +15,15 @@
             :class="{ active: viewMode === mode }"
             @click="viewMode = mode"
           >
-            {{ { graph: '图谱', split: '双栏', workbench: '工作台' }[mode] }}
+            {{ { graph: '그래프', split: '분할', workbench: '작업공간' }[mode] }}
           </button>
         </div>
       </div>
 
       <div class="header-right">
         <div class="workflow-step">
-          <span class="step-num">Step 2/5</span>
-          <span class="step-name">环境搭建</span>
+          <span class="step-num">2단계 / 5단계</span>
+          <span class="step-name">환경 설정</span>
         </div>
         <div class="step-divider"></div>
         <span class="status-indicator" :class="statusClass">
@@ -33,9 +33,9 @@
       </div>
     </header>
 
-    <!-- Main Content Area -->
+    <!-- 주요 콘텐츠 영역 -->
     <main class="content-area">
-      <!-- Left Panel: Graph -->
+      <!-- 왼쪽 패널: 그래프 -->
       <div class="panel-wrapper left" :style="leftPanelStyle">
         <GraphPanel 
           :graphData="graphData"
@@ -46,7 +46,7 @@
         />
       </div>
 
-      <!-- Right Panel: Step2 环境搭建 -->
+      <!-- 오른쪽 패널: 2단계 환경 설정 -->
       <div class="panel-wrapper right" :style="rightPanelStyle">
         <Step2EnvSetup
           :simulationId="currentSimulationId"
@@ -74,15 +74,15 @@ import { getSimulation, stopSimulation, getEnvStatus, closeSimulationEnv } from 
 const route = useRoute()
 const router = useRouter()
 
-// Props
+// 속성
 const props = defineProps({
   simulationId: String
 })
 
-// Layout State
+// 레이아웃 상태
 const viewMode = ref('split')
 
-// Data State
+// 데이터 상태
 const currentSimulationId = ref(route.params.simulationId)
 const projectData = ref(null)
 const graphData = ref(null)
@@ -90,7 +90,7 @@ const graphLoading = ref(false)
 const systemLogs = ref([])
 const currentStatus = ref('processing') // processing | completed | error
 
-// --- Computed Layout Styles ---
+// --- 계산된 레이아웃 스타일 ---
 const leftPanelStyle = computed(() => {
   if (viewMode.value === 'graph') return { width: '100%', opacity: 1, transform: 'translateX(0)' }
   if (viewMode.value === 'workbench') return { width: '0%', opacity: 0, transform: 'translateX(-20px)' }
@@ -103,18 +103,18 @@ const rightPanelStyle = computed(() => {
   return { width: '50%', opacity: 1, transform: 'translateX(0)' }
 })
 
-// --- Status Computed ---
+// --- 상태 계산 ---
 const statusClass = computed(() => {
   return currentStatus.value
 })
 
 const statusText = computed(() => {
-  if (currentStatus.value === 'error') return 'Error'
-  if (currentStatus.value === 'completed') return 'Ready'
-  return 'Preparing'
+  if (currentStatus.value === 'error') return '오류'
+  if (currentStatus.value === 'completed') return '준비 완료'
+  return '준비 중'
 })
 
-// --- Helpers ---
+// --- 보조 함수 ---
 const addLog = (msg) => {
   const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) + '.' + new Date().getMilliseconds().toString().padStart(3, '0')
   systemLogs.value.push({ time, msg })
@@ -127,7 +127,7 @@ const updateStatus = (status) => {
   currentStatus.value = status
 }
 
-// --- Layout Methods ---
+// --- 레이아웃 메서드 ---
 const toggleMaximize = (target) => {
   if (viewMode.value === target) {
     viewMode.value = 'split'
@@ -137,7 +137,7 @@ const toggleMaximize = (target) => {
 }
 
 const handleGoBack = () => {
-  // 返回到 process 页面
+  // process 페이지로 돌아갑니다
   if (projectData.value?.project_id) {
     router.push({ name: 'Process', params: { projectId: projectData.value.project_id } })
   } else {
@@ -146,122 +146,122 @@ const handleGoBack = () => {
 }
 
 const handleNextStep = (params = {}) => {
-  addLog('进入 Step 3: 开始模拟')
+  addLog('3단계로 이동: 시뮬레이션 시작')
   
-  // 记录模拟轮数配置
+  // 시뮬레이션 회차 설정을 기록합니다
   if (params.maxRounds) {
-    addLog(`自定义模拟轮数: ${params.maxRounds} 轮`)
+    addLog(`사용자 지정 시뮬레이션 회차: ${params.maxRounds}회`)
   } else {
-    addLog('使用自动配置的模拟轮数')
+    addLog('자동 설정 회차를 사용합니다')
   }
   
-  // 构建路由参数
+  // 라우팅 파라미터를 구성합니다
   const routeParams = {
     name: 'SimulationRun',
     params: { simulationId: currentSimulationId.value }
   }
   
-  // 如果有自定义轮数，通过 query 参数传递
+  // 사용자 지정 회차가 있으면 query로 전달합니다
   if (params.maxRounds) {
     routeParams.query = { maxRounds: params.maxRounds }
   }
   
-  // 跳转到 Step 3 页面
+  // 3단계 페이지로 이동합니다
   router.push(routeParams)
 }
 
 // --- Data Logic ---
 
 /**
- * 检查并关闭正在运行的模拟
- * 当用户从 Step 3 返回到 Step 2 时，默认用户要退出模拟
+ * 실행 중인 시뮬레이션을 확인하고 종료합니다.
+ * 사용자가 3단계에서 2단계로 돌아오면 기본적으로 시뮬레이션 종료를 의미합니다.
  */
 const checkAndStopRunningSimulation = async () => {
   if (!currentSimulationId.value) return
   
   try {
-    // 先检查模拟环境是否存活
+    // 먼저 시뮬레이션 환경이 살아 있는지 확인합니다
     const envStatusRes = await getEnvStatus({ simulation_id: currentSimulationId.value })
     
     if (envStatusRes.success && envStatusRes.data?.env_alive) {
-      addLog('检测到模拟环境正在运行，正在关闭...')
+      addLog('실행 중인 시뮬레이션 환경을 감지했습니다. 종료하는 중...')
       
-      // 尝试优雅关闭模拟环境
+      // 우아하게 시뮬레이션 환경을 종료합니다
       try {
         const closeRes = await closeSimulationEnv({ 
           simulation_id: currentSimulationId.value,
-          timeout: 10  // 10秒超时
+          timeout: 10  // 10초 타임아웃
         })
         
         if (closeRes.success) {
-          addLog('✓ 模拟环境已关闭')
+          addLog('✓ 시뮬레이션 환경이 종료되었습니다')
         } else {
-          addLog(`关闭模拟环境失败: ${closeRes.error || '未知错误'}`)
-          // 如果优雅关闭失败，尝试强制停止
+          addLog(`시뮬레이션 환경 종료 실패: ${closeRes.error || '알 수 없는 오류'}`)
+          // 우아한 종료가 실패하면 강제 중지를 시도합니다
           await forceStopSimulation()
         }
       } catch (closeErr) {
-        addLog(`关闭模拟环境异常: ${closeErr.message}`)
-        // 如果优雅关闭异常，尝试强制停止
+        addLog(`시뮬레이션 환경 종료 중 예외가 발생했습니다: ${closeErr.message}`)
+        // 우아한 종료 중 예외가 발생하면 강제 중지를 시도합니다
         await forceStopSimulation()
       }
     } else {
-      // 环境未运行，但可能进程还在，检查模拟状态
+      // 환경은 꺼져 있지만 프로세스가 남아 있을 수 있어 시뮬레이션 상태를 확인합니다
       const simRes = await getSimulation(currentSimulationId.value)
       if (simRes.success && simRes.data?.status === 'running') {
-        addLog('检测到模拟状态为运行中，正在停止...')
+        addLog('시뮬레이션이 실행 중입니다. 중지하는 중...')
         await forceStopSimulation()
       }
     }
   } catch (err) {
-    // 检查环境状态失败不影响后续流程
-    console.warn('检查模拟状态失败:', err)
+    // 환경 상태 확인 실패는 이후 흐름에 영향을 주지 않습니다
+    console.warn('시뮬레이션 상태 확인 실패:', err)
   }
 }
 
 /**
- * 强制停止模拟
+ * 시뮬레이션을 강제로 종료합니다.
  */
 const forceStopSimulation = async () => {
   try {
     const stopRes = await stopSimulation({ simulation_id: currentSimulationId.value })
     if (stopRes.success) {
-      addLog('✓ 模拟已强制停止')
+      addLog('✓ 시뮬레이션을 강제 중지했습니다')
     } else {
-      addLog(`强制停止模拟失败: ${stopRes.error || '未知错误'}`)
+      addLog(`강제 시뮬레이션 중지 실패: ${stopRes.error || '알 수 없는 오류'}`)
     }
   } catch (err) {
-    addLog(`强制停止模拟异常: ${err.message}`)
+    addLog(`강제 중지 중 예외 발생: ${err.message}`)
   }
 }
 
 const loadSimulationData = async () => {
   try {
-    addLog(`加载模拟数据: ${currentSimulationId.value}`)
+    addLog(`시뮬레이션 데이터 로드: ${currentSimulationId.value}`)
     
-    // 获取 simulation 信息
+    // 시뮬레이션 정보를 가져옵니다
     const simRes = await getSimulation(currentSimulationId.value)
     if (simRes.success && simRes.data) {
       const simData = simRes.data
       
-      // 获取 project 信息
+      // 프로젝트 정보를 가져옵니다
       if (simData.project_id) {
         const projRes = await getProject(simData.project_id)
         if (projRes.success && projRes.data) {
           projectData.value = projRes.data
-          addLog(`项目加载成功: ${projRes.data.project_id}`)
+          addLog(`프로젝트 로드 성공: ${projRes.data.project_id}`)
           
-          // 获取 graph 数据
+          // 그래프 데이터를 가져옵니다
           if (projRes.data.graph_id) {
             await loadGraph(projRes.data.graph_id)
           }
         }
       }
     } else {
-      addLog(`加载模拟数据失败: ${simRes.error || '未知错误'}`)
+      addLog(`시뮬레이션 데이터 로드 실패: ${simRes.error || '알 수 없는 오류'}`)
     }
   } catch (err) {
-    addLog(`加载异常: ${err.message}`)
+    addLog(`불러오는 중 예외가 발생했습니다: ${err.message}`)
   }
 }
 
@@ -271,10 +271,10 @@ const loadGraph = async (graphId) => {
     const res = await getGraphData(graphId)
     if (res.success) {
       graphData.value = res.data
-      addLog('图谱数据加载成功')
+      addLog('그래프 데이터 로드 완료')
     }
   } catch (err) {
-    addLog(`图谱加载失败: ${err.message}`)
+    addLog(`그래프 로드 실패: ${err.message}`)
   } finally {
     graphLoading.value = false
   }
@@ -287,12 +287,12 @@ const refreshGraph = () => {
 }
 
 onMounted(async () => {
-  addLog('SimulationView 初始化')
+  addLog('시뮬레이션 화면을 초기화했습니다')
   
-  // 检查并关闭正在运行的模拟（用户从 Step 3 返回时）
+  // 실행 중인 시뮬레이션을 확인하고 종료합니다(3단계에서 돌아올 때)
   await checkAndStopRunningSimulation()
   
-  // 加载模拟数据
+  // 시뮬레이션 데이터를 불러옵니다
   loadSimulationData()
 })
 </script>
@@ -431,4 +431,3 @@ onMounted(async () => {
   border-right: 1px solid #EAEAEA;
 }
 </style>
-

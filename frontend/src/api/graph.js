@@ -1,41 +1,37 @@
-import service, { requestWithRetry } from './index'
+import service from './index'
 
 /**
- * 生成本体（上传文档和模拟需求）
- * @param {Object} data - 包含files, simulation_requirement, project_name等
+ * 온톨로지를 생성합니다(문서 업로드 및 시뮬레이션 요구사항 포함).
+ * @param {Object} data - files, simulation_requirement, project_name 등을 포함합니다.
  * @returns {Promise}
  */
 export function generateOntology(formData) {
-  return requestWithRetry(() => 
-    service({
-      url: '/api/graph/ontology/generate',
-      method: 'post',
-      data: formData,
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    })
-  )
+  return service({
+    url: '/api/graph/ontology/generate',
+    method: 'post',
+    data: formData,
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
 }
 
 /**
- * 构建图谱
- * @param {Object} data - 包含project_id, graph_name等
+ * 그래프를 구축합니다.
+ * @param {Object} data - project_id, graph_name 등을 포함합니다.
  * @returns {Promise}
  */
 export function buildGraph(data) {
-  return requestWithRetry(() =>
-    service({
-      url: '/api/graph/build',
-      method: 'post',
-      data
-    })
-  )
+  return service({
+    url: '/api/graph/build',
+    method: 'post',
+    data
+  })
 }
 
 /**
- * 查询任务状态
- * @param {String} taskId - 任务ID
+ * 작업 상태를 조회합니다.
+ * @param {String} taskId - 작업 ID
  * @returns {Promise}
  */
 export function getTaskStatus(taskId) {
@@ -46,8 +42,8 @@ export function getTaskStatus(taskId) {
 }
 
 /**
- * 获取图谱数据
- * @param {String} graphId - 图谱ID
+ * 그래프 데이터를 가져옵니다.
+ * @param {String} graphId - 그래프 ID
  * @returns {Promise}
  */
 export function getGraphData(graphId) {
@@ -58,8 +54,8 @@ export function getGraphData(graphId) {
 }
 
 /**
- * 获取项目信息
- * @param {String} projectId - 项目ID
+ * 프로젝트 정보를 가져옵니다.
+ * @param {String} projectId - 프로젝트 ID
  * @returns {Promise}
  */
 export function getProject(projectId) {

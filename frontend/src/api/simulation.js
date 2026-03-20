@@ -1,23 +1,23 @@
-import service, { requestWithRetry } from './index'
+import service from './index'
 
 /**
- * 创建模拟
+ * 시뮬레이션을 생성합니다.
  * @param {Object} data - { project_id, graph_id?, enable_twitter?, enable_reddit? }
  */
 export const createSimulation = (data) => {
-  return requestWithRetry(() => service.post('/api/simulation/create', data), 3, 1000)
+  return service.post('/api/simulation/create', data)
 }
 
 /**
- * 准备模拟环境（异步任务）
+ * 시뮬레이션 환경을 준비합니다(비동기 작업).
  * @param {Object} data - { simulation_id, entity_types?, use_llm_for_profiles?, parallel_profile_count?, force_regenerate? }
  */
 export const prepareSimulation = (data) => {
-  return requestWithRetry(() => service.post('/api/simulation/prepare', data), 3, 1000)
+  return service.post('/api/simulation/prepare', data)
 }
 
 /**
- * 查询准备任务进度
+ * 준비 작업 진행률을 조회합니다.
  * @param {Object} data - { task_id?, simulation_id? }
  */
 export const getPrepareStatus = (data) => {
@@ -25,7 +25,7 @@ export const getPrepareStatus = (data) => {
 }
 
 /**
- * 获取模拟状态
+ * 시뮬레이션 상태를 가져옵니다.
  * @param {string} simulationId
  */
 export const getSimulation = (simulationId) => {
@@ -33,7 +33,7 @@ export const getSimulation = (simulationId) => {
 }
 
 /**
- * 获取模拟的 Agent Profiles
+ * 시뮬레이션의 에이전트 프로필을 가져옵니다.
  * @param {string} simulationId
  * @param {string} platform - 'reddit' | 'twitter'
  */
@@ -42,7 +42,7 @@ export const getSimulationProfiles = (simulationId, platform = 'reddit') => {
 }
 
 /**
- * 实时获取生成中的 Agent Profiles
+ * 생성 중인 에이전트 프로필을 실시간으로 가져옵니다.
  * @param {string} simulationId
  * @param {string} platform - 'reddit' | 'twitter'
  */
@@ -51,7 +51,7 @@ export const getSimulationProfilesRealtime = (simulationId, platform = 'reddit')
 }
 
 /**
- * 获取模拟配置
+ * 시뮬레이션 설정을 가져옵니다.
  * @param {string} simulationId
  */
 export const getSimulationConfig = (simulationId) => {
@@ -59,17 +59,17 @@ export const getSimulationConfig = (simulationId) => {
 }
 
 /**
- * 实时获取生成中的模拟配置
+ * 생성 중인 시뮬레이션 설정을 실시간으로 가져옵니다.
  * @param {string} simulationId
- * @returns {Promise} 返回配置信息，包含元数据和配置内容
+ * @returns {Promise} 메타데이터와 설정 내용을 포함한 정보를 반환합니다.
  */
 export const getSimulationConfigRealtime = (simulationId) => {
   return service.get(`/api/simulation/${simulationId}/config/realtime`)
 }
 
 /**
- * 列出所有模拟
- * @param {string} projectId - 可选，按项目ID过滤
+ * 모든 시뮬레이션을 나열합니다.
+ * @param {string} projectId - 선택 사항, 프로젝트 ID로 필터링
  */
 export const listSimulations = (projectId) => {
   const params = projectId ? { project_id: projectId } : {}
@@ -77,15 +77,15 @@ export const listSimulations = (projectId) => {
 }
 
 /**
- * 启动模拟
+ * 시뮬레이션을 시작합니다.
  * @param {Object} data - { simulation_id, platform?, max_rounds?, enable_graph_memory_update? }
  */
 export const startSimulation = (data) => {
-  return requestWithRetry(() => service.post('/api/simulation/start', data), 3, 1000)
+  return service.post('/api/simulation/start', data)
 }
 
 /**
- * 停止模拟
+ * 시뮬레이션을 중지합니다.
  * @param {Object} data - { simulation_id }
  */
 export const stopSimulation = (data) => {
@@ -93,7 +93,7 @@ export const stopSimulation = (data) => {
 }
 
 /**
- * 获取模拟运行实时状态
+ * 시뮬레이션 실행의 실시간 상태를 가져옵니다.
  * @param {string} simulationId
  */
 export const getRunStatus = (simulationId) => {
@@ -101,7 +101,7 @@ export const getRunStatus = (simulationId) => {
 }
 
 /**
- * 获取模拟运行详细状态（包含最近动作）
+ * 시뮬레이션 실행의 상세 상태를 가져옵니다(최근 동작 포함).
  * @param {string} simulationId
  */
 export const getRunStatusDetail = (simulationId) => {
@@ -109,11 +109,11 @@ export const getRunStatusDetail = (simulationId) => {
 }
 
 /**
- * 获取模拟中的帖子
+ * 시뮬레이션 중 게시물을 가져옵니다.
  * @param {string} simulationId
  * @param {string} platform - 'reddit' | 'twitter'
- * @param {number} limit - 返回数量
- * @param {number} offset - 偏移量
+ * @param {number} limit - 반환 개수
+ * @param {number} offset - 오프셋
  */
 export const getSimulationPosts = (simulationId, platform = 'reddit', limit = 50, offset = 0) => {
   return service.get(`/api/simulation/${simulationId}/posts`, {
@@ -122,10 +122,10 @@ export const getSimulationPosts = (simulationId, platform = 'reddit', limit = 50
 }
 
 /**
- * 获取模拟时间线（按轮次汇总）
+ * 시뮬레이션 타임라인을 가져옵니다(회차별 집계).
  * @param {string} simulationId
- * @param {number} startRound - 起始轮次
- * @param {number} endRound - 结束轮次
+ * @param {number} startRound - 시작 회차
+ * @param {number} endRound - 종료 회차
  */
 export const getSimulationTimeline = (simulationId, startRound = 0, endRound = null) => {
   const params = { start_round: startRound }
@@ -136,7 +136,7 @@ export const getSimulationTimeline = (simulationId, startRound = 0, endRound = n
 }
 
 /**
- * 获取Agent统计信息
+ * 에이전트 통계 정보를 가져옵니다.
  * @param {string} simulationId
  */
 export const getAgentStats = (simulationId) => {
@@ -144,7 +144,7 @@ export const getAgentStats = (simulationId) => {
 }
 
 /**
- * 获取模拟动作历史
+ * 시뮬레이션 동작 이력을 가져옵니다.
  * @param {string} simulationId
  * @param {Object} params - { limit, offset, platform, agent_id, round_num }
  */
@@ -153,7 +153,7 @@ export const getSimulationActions = (simulationId, params = {}) => {
 }
 
 /**
- * 关闭模拟环境（优雅退出）
+ * 시뮬레이션 환경을 종료합니다(우아한 종료).
  * @param {Object} data - { simulation_id, timeout? }
  */
 export const closeSimulationEnv = (data) => {
@@ -161,7 +161,7 @@ export const closeSimulationEnv = (data) => {
 }
 
 /**
- * 获取模拟环境状态
+ * 시뮬레이션 환경 상태를 가져옵니다.
  * @param {Object} data - { simulation_id }
  */
 export const getEnvStatus = (data) => {
@@ -169,19 +169,18 @@ export const getEnvStatus = (data) => {
 }
 
 /**
- * 批量采访 Agent
+ * 에이전트를 일괄 인터뷰합니다.
  * @param {Object} data - { simulation_id, interviews: [{ agent_id, prompt }] }
  */
 export const interviewAgents = (data) => {
-  return requestWithRetry(() => service.post('/api/simulation/interview/batch', data), 3, 1000)
+  return service.post('/api/simulation/interview/batch', data)
 }
 
 /**
- * 获取历史模拟列表（带项目详情）
- * 用于首页历史项目展示
- * @param {number} limit - 返回数量限制
+ * 프로젝트 상세가 포함된 과거 시뮬레이션 목록을 가져옵니다.
+ * 홈의 과거 프로젝트 표시용입니다.
+ * @param {number} limit - 반환 개수 제한
  */
 export const getSimulationHistory = (limit = 20) => {
   return service.get('/api/simulation/history', { params: { limit } })
 }
-

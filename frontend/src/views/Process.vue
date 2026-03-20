@@ -1,13 +1,13 @@
 <template>
   <div class="process-page">
-    <!-- 顶部导航栏 -->
+    <!-- 상단 내비게이션 바 -->
     <nav class="navbar">
       <div class="nav-brand" @click="goHome">MIROFISH</div>
       
-      <!-- 中间步骤指示器 -->
+      <!-- 가운데 단계 표시기 -->
       <div class="nav-center">
-        <div class="step-badge">STEP 01</div>
-        <div class="step-name">图谱构建</div>
+        <div class="step-badge">1단계</div>
+        <div class="step-name">그래프 구축</div>
       </div>
 
       <div class="nav-status">
@@ -16,27 +16,27 @@
       </div>
     </nav>
 
-    <!-- 主内容区 -->
+    <!-- 주요 콘텐츠 영역 -->
     <div class="main-content">
-      <!-- 左侧: 实时图谱展示 -->
+      <!-- 왼쪽: 실시간 그래프 표시 -->
       <div class="left-panel" :class="{ 'full-screen': isFullScreen }">
         <div class="panel-header">
           <div class="header-left">
             <span class="header-deco">◆</span>
-            <span class="header-title">实时知识图谱</span>
+            <span class="header-title">실시간 지식 그래프</span>
           </div>
           <div class="header-right">
             <template v-if="graphData">
-              <span class="stat-item">{{ graphData.node_count || graphData.nodes?.length || 0 }} 节点</span>
+              <span class="stat-item">{{ graphData.node_count || graphData.nodes?.length || 0 }} 노드</span>
               <span class="stat-divider">|</span>
-              <span class="stat-item">{{ graphData.edge_count || graphData.edges?.length || 0 }} 关系</span>
+              <span class="stat-item">{{ graphData.edge_count || graphData.edges?.length || 0 }} 관계</span>
               <span class="stat-divider">|</span>
             </template>
             <div class="action-buttons">
-                <button class="action-btn" @click="refreshGraph" :disabled="graphLoading" title="刷新图谱">
+                <button class="action-btn" @click="refreshGraph" :disabled="graphLoading" title="그래프 새로고침">
                   <span class="icon-refresh" :class="{ 'spinning': graphLoading }">↻</span>
                 </button>
-                <button class="action-btn" @click="toggleFullScreen" :title="isFullScreen ? '退出全屏' : '全屏显示'">
+                <button class="action-btn" @click="toggleFullScreen" :title="isFullScreen ? '전체 화면 종료' : '전체 화면으로 보기'">
                   <span class="icon-fullscreen">{{ isFullScreen ? '↙' : '↗' }}</span>
                 </button>
             </div>
@@ -44,29 +44,29 @@
         </div>
         
         <div class="graph-container" ref="graphContainer">
-          <!-- 图谱可视化（只要有数据就显示） -->
+          <!-- 그래프 시각화(데이터가 있으면 표시) -->
           <div v-if="graphData" class="graph-view">
             <svg ref="graphSvg" class="graph-svg"></svg>
-            <!-- 构建中提示 -->
+            <!-- 구축 중 안내 -->
             <div v-if="currentPhase === 1" class="graph-building-hint">
               <span class="building-dot"></span>
-              实时更新中...
+              실시간 갱신 중...
             </div>
             
-            <!-- 节点/边详情面板 -->
+            <!-- 노드/간선 상세 패널 -->
             <div v-if="selectedItem" class="detail-panel">
               <div class="detail-panel-header">
-                <span class="detail-title">{{ selectedItem.type === 'node' ? 'Node Details' : 'Relationship' }}</span>
+                <span class="detail-title">{{ selectedItem.type === 'node' ? '노드 상세' : '관계' }}</span>
                 <span v-if="selectedItem.type === 'node'" class="detail-badge" :style="{ background: selectedItem.color }">
                   {{ selectedItem.entityType }}
                 </span>
                 <button class="detail-close" @click="closeDetailPanel">×</button>
               </div>
               
-              <!-- 节点详情 -->
+              <!-- 노드 상세 -->
               <div v-if="selectedItem.type === 'node'" class="detail-content">
                 <div class="detail-row">
-                  <span class="detail-label">Name:</span>
+                  <span class="detail-label">이름:</span>
                   <span class="detail-value highlight">{{ selectedItem.data.name }}</span>
                 </div>
                 <div class="detail-row">
@@ -74,13 +74,13 @@
                   <span class="detail-value uuid">{{ selectedItem.data.uuid }}</span>
                 </div>
                 <div class="detail-row" v-if="selectedItem.data.created_at">
-                  <span class="detail-label">Created:</span>
+                  <span class="detail-label">생성일:</span>
                   <span class="detail-value">{{ formatDate(selectedItem.data.created_at) }}</span>
                 </div>
                 
-                <!-- Properties / Attributes -->
+                <!-- 속성 / 어트리뷰트 -->
                 <div class="detail-section" v-if="selectedItem.data.attributes && Object.keys(selectedItem.data.attributes).length > 0">
-                  <span class="detail-label">Properties:</span>
+                  <span class="detail-label">속성:</span>
                   <div class="properties-list">
                     <div v-for="(value, key) in selectedItem.data.attributes" :key="key" class="property-item">
                       <span class="property-key">{{ key }}:</span>
@@ -89,92 +89,92 @@
                   </div>
                 </div>
                 
-                <!-- Summary -->
+                <!-- 요약 -->
                 <div class="detail-section" v-if="selectedItem.data.summary">
-                  <span class="detail-label">Summary:</span>
+                  <span class="detail-label">요약:</span>
                   <p class="detail-summary">{{ selectedItem.data.summary }}</p>
                 </div>
                 
-                <!-- Labels -->
+                <!-- 라벨 -->
                 <div class="detail-row" v-if="selectedItem.data.labels?.length">
-                  <span class="detail-label">Labels:</span>
+                  <span class="detail-label">라벨:</span>
                   <div class="detail-labels">
                     <span v-for="label in selectedItem.data.labels" :key="label" class="label-tag">{{ label }}</span>
                   </div>
                 </div>
               </div>
               
-              <!-- 边详情 -->
+              <!-- 간선 상세 -->
               <div v-else class="detail-content">
-                <!-- 关系展示 -->
+                <!-- 관계 표시 -->
                 <div class="edge-relation">
                   <span class="edge-source">{{ selectedItem.data.source_name || selectedItem.data.source_node_name }}</span>
                   <span class="edge-arrow">→</span>
-                  <span class="edge-type">{{ selectedItem.data.name || selectedItem.data.fact_type || 'RELATED_TO' }}</span>
+                  <span class="edge-type">{{ selectedItem.data.name || selectedItem.data.fact_type || '관련됨' }}</span>
                   <span class="edge-arrow">→</span>
                   <span class="edge-target">{{ selectedItem.data.target_name || selectedItem.data.target_node_name }}</span>
                 </div>
                 
-                <div class="detail-subtitle">Relationship</div>
+                <div class="detail-subtitle">관계</div>
                 
                 <div class="detail-row">
                   <span class="detail-label">UUID:</span>
                   <span class="detail-value uuid">{{ selectedItem.data.uuid }}</span>
                 </div>
                 <div class="detail-row">
-                  <span class="detail-label">Label:</span>
-                  <span class="detail-value">{{ selectedItem.data.name || selectedItem.data.fact_type || 'RELATED_TO' }}</span>
+                  <span class="detail-label">라벨:</span>
+                  <span class="detail-value">{{ selectedItem.data.name || selectedItem.data.fact_type || '관련됨' }}</span>
                 </div>
                 <div class="detail-row" v-if="selectedItem.data.fact_type">
-                  <span class="detail-label">Type:</span>
+                  <span class="detail-label">유형:</span>
                   <span class="detail-value">{{ selectedItem.data.fact_type }}</span>
                 </div>
                 
-                <!-- Fact -->
+                <!-- 사실 -->
                 <div class="detail-section" v-if="selectedItem.data.fact">
-                  <span class="detail-label">Fact:</span>
+                  <span class="detail-label">사실:</span>
                   <p class="detail-summary">{{ selectedItem.data.fact }}</p>
                 </div>
                 
-                <!-- Episodes -->
+                <!-- 에피소드 -->
                 <div class="detail-section" v-if="selectedItem.data.episodes?.length">
-                  <span class="detail-label">Episodes:</span>
+                  <span class="detail-label">에피소드:</span>
                   <div class="episodes-list">
                     <span v-for="ep in selectedItem.data.episodes" :key="ep" class="episode-tag">{{ ep }}</span>
                   </div>
                 </div>
                 
                 <div class="detail-row" v-if="selectedItem.data.created_at">
-                  <span class="detail-label">Created:</span>
+                  <span class="detail-label">생성일:</span>
                   <span class="detail-value">{{ formatDate(selectedItem.data.created_at) }}</span>
                 </div>
                 <div class="detail-row" v-if="selectedItem.data.valid_at">
-                  <span class="detail-label">Valid From:</span>
+                  <span class="detail-label">유효 시작:</span>
                   <span class="detail-value">{{ formatDate(selectedItem.data.valid_at) }}</span>
                 </div>
                 <div class="detail-row" v-if="selectedItem.data.invalid_at">
-                  <span class="detail-label">Invalid At:</span>
+                  <span class="detail-label">무효 시점:</span>
                   <span class="detail-value">{{ formatDate(selectedItem.data.invalid_at) }}</span>
                 </div>
                 <div class="detail-row" v-if="selectedItem.data.expired_at">
-                  <span class="detail-label">Expired At:</span>
+                  <span class="detail-label">만료 시점:</span>
                   <span class="detail-value">{{ formatDate(selectedItem.data.expired_at) }}</span>
                 </div>
               </div>
             </div>
           </div>
           
-          <!-- 加载状态 -->
+          <!-- 로딩 상태 -->
           <div v-else-if="graphLoading" class="graph-loading">
             <div class="loading-animation">
               <div class="loading-ring"></div>
               <div class="loading-ring"></div>
               <div class="loading-ring"></div>
             </div>
-            <p class="loading-text">图谱数据加载中...</p>
+            <p class="loading-text">그래프 데이터를 불러오는 중...</p>
           </div>
           
-          <!-- 等待构建 -->
+          <!-- 구축 대기 -->
           <div v-else-if="currentPhase < 1" class="graph-waiting">
             <div class="waiting-icon">
               <svg viewBox="0 0 100 100" class="network-icon">
@@ -189,29 +189,29 @@
                 <line x1="50" y1="72" x2="74" y2="66" stroke="#000" stroke-width="1"/>
               </svg>
             </div>
-            <p class="waiting-text">等待本体生成</p>
-            <p class="waiting-hint">生成完成后将自动开始构建图谱</p>
+            <p class="waiting-text">온톨로지 생성을 기다리는 중...</p>
+            <p class="waiting-hint">생성이 완료되면 그래프 구축이 자동으로 시작됩니다.</p>
           </div>
           
-          <!-- 构建中但还没有数据 -->
+          <!-- 구축 중이지만 아직 데이터가 없음 -->
           <div v-else-if="currentPhase === 1 && !graphData" class="graph-waiting">
             <div class="loading-animation">
               <div class="loading-ring"></div>
               <div class="loading-ring"></div>
               <div class="loading-ring"></div>
             </div>
-            <p class="waiting-text">图谱构建中</p>
-            <p class="waiting-hint">数据即将显示...</p>
+            <p class="waiting-text">그래프 구축 중</p>
+            <p class="waiting-hint">데이터가 곧 표시됩니다...</p>
           </div>
           
-          <!-- 错误状态 -->
+          <!-- 오류 상태 -->
           <div v-else-if="error" class="graph-error">
             <span class="error-icon">⚠</span>
             <p>{{ error }}</p>
           </div>
         </div>
         
-        <!-- 图谱图例 -->
+        <!-- 그래프 범례 -->
         <div v-if="graphData" class="graph-legend">
           <div class="legend-item" v-for="type in entityTypes" :key="type.name">
             <span class="legend-dot" :style="{ background: type.color }"></span>
@@ -221,20 +221,20 @@
         </div>
       </div>
 
-      <!-- 右侧: 构建流程详情 -->
+      <!-- 오른쪽: 구축 흐름 상세 -->
       <div class="right-panel" :class="{ 'hidden': isFullScreen }">
         <div class="panel-header dark-header">
           <span class="header-icon">▣</span>
-          <span class="header-title">构建流程</span>
+          <span class="header-title">구축 흐름</span>
         </div>
 
         <div class="process-content">
-          <!-- 阶段1: 本体生成 -->
+          <!-- 1단계: 온톨로지 생성 -->
           <div class="process-phase" :class="{ 'active': currentPhase === 0, 'completed': currentPhase > 0 }">
             <div class="phase-header">
               <span class="phase-num">01</span>
               <div class="phase-info">
-                <div class="phase-title">本体生成</div>
+                <div class="phase-title">온톨로지 생성</div>
                 <div class="phase-api">/api/graph/ontology/generate</div>
               </div>
               <span class="phase-status" :class="getPhaseStatusClass(0)">
@@ -244,24 +244,24 @@
             
             <div class="phase-detail">
               <div class="detail-section">
-                <div class="detail-label">接口说明</div>
+                <div class="detail-label">인터페이스 설명</div>
                 <div class="detail-content">
-                  上传文档后，LLM分析文档内容，自动生成适合舆论模拟的本体结构（实体类型 + 关系类型）
+                  문서를 업로드하면 LLM이 문서 내용을 분석해 여론 시뮬레이션에 적합한 온톨로지 구조(엔티티 유형 + 관계 유형)를 자동 생성합니다.
                 </div>
               </div>
               
-              <!-- 本体生成进度 -->
+              <!-- 온톨로지 생성 진행률 -->
               <div class="detail-section" v-if="ontologyProgress && currentPhase === 0">
-                <div class="detail-label">生成进度</div>
+                <div class="detail-label">생성 진행률</div>
                 <div class="ontology-progress">
                   <div class="progress-spinner"></div>
                   <span class="progress-text">{{ ontologyProgress.message }}</span>
                 </div>
               </div>
               
-              <!-- 已生成的本体信息 -->
+              <!-- 생성된 온톨로지 정보 -->
               <div class="detail-section" v-if="projectData?.ontology">
-                <div class="detail-label">生成的实体类型 ({{ projectData.ontology.entity_types?.length || 0 }})</div>
+                <div class="detail-label">생성된 엔티티 유형 ({{ projectData.ontology.entity_types?.length || 0 }})</div>
                 <div class="entity-tags">
                   <span 
                     v-for="entity in projectData.ontology.entity_types" 
@@ -274,7 +274,7 @@
               </div>
               
               <div class="detail-section" v-if="projectData?.ontology">
-                <div class="detail-label">生成的关系类型 ({{ projectData.ontology.relation_types?.length || 0 }})</div>
+                <div class="detail-label">생성된 관계 유형 ({{ projectData.ontology.relation_types?.length || 0 }})</div>
                 <div class="relation-list">
                   <div 
                     v-for="(rel, idx) in projectData.ontology.relation_types?.slice(0, 5) || []" 
@@ -288,24 +288,24 @@
                     <span class="rel-target">{{ rel.target_type }}</span>
                   </div>
                   <div v-if="(projectData.ontology.relation_types?.length || 0) > 5" class="relation-more">
-                    +{{ projectData.ontology.relation_types.length - 5 }} 更多关系...
+                    +{{ projectData.ontology.relation_types.length - 5 }}개 관계 더 보기...
                   </div>
                 </div>
               </div>
               
-              <!-- 等待状态 -->
+              <!-- 대기 상태 -->
               <div class="detail-section waiting-state" v-if="!projectData?.ontology && currentPhase === 0 && !ontologyProgress">
-                <div class="waiting-hint">等待本体生成...</div>
+                <div class="waiting-hint">온톨로지 생성을 기다리는 중...</div>
               </div>
             </div>
           </div>
 
-          <!-- 阶段2: 图谱构建 -->
+          <!-- 2단계: 그래프 구축 -->
           <div class="process-phase" :class="{ 'active': currentPhase === 1, 'completed': currentPhase > 1 }">
             <div class="phase-header">
               <span class="phase-num">02</span>
               <div class="phase-info">
-                <div class="phase-title">图谱构建</div>
+                <div class="phase-title">그래프 구축</div>
                 <div class="phase-api">/api/graph/build</div>
               </div>
               <span class="phase-status" :class="getPhaseStatusClass(1)">
@@ -315,20 +315,20 @@
             
             <div class="phase-detail">
               <div class="detail-section">
-                <div class="detail-label">接口说明</div>
+                <div class="detail-label">인터페이스 설명</div>
                 <div class="detail-content">
-                  基于生成的本体，将文档分块后调用 Zep API 构建知识图谱，提取实体和关系
+                  생성된 온톨로지를 바탕으로 문서를 분할한 뒤 로컬 그래프 저장소에 기록해 엔티티와 관계를 추출합니다.
                 </div>
               </div>
               
-              <!-- 等待本体完成 -->
+              <!-- 온톨로지 완료 대기 -->
               <div class="detail-section waiting-state" v-if="currentPhase < 1">
-                <div class="waiting-hint">等待本体生成完成...</div>
+                <div class="waiting-hint">온톨로지 생성 완료를 기다리는 중...</div>
               </div>
               
-              <!-- 构建进度 -->
+              <!-- 구축 진행률 -->
               <div class="detail-section" v-if="buildProgress && currentPhase >= 1">
-                <div class="detail-label">构建进度</div>
+                <div class="detail-label">구축 진행률</div>
                 <div class="progress-bar">
                   <div class="progress-fill" :style="{ width: buildProgress.progress + '%' }"></div>
                 </div>
@@ -339,32 +339,32 @@
               </div>
               
               <div class="detail-section" v-if="graphData">
-                <div class="detail-label">构建结果</div>
+                <div class="detail-label">구축 결과</div>
                 <div class="build-result">
                   <div class="result-item">
                     <span class="result-value">{{ graphData.node_count }}</span>
-                    <span class="result-label">实体节点</span>
+                    <span class="result-label">엔티티 노드</span>
                   </div>
                   <div class="result-item">
                     <span class="result-value">{{ graphData.edge_count }}</span>
-                    <span class="result-label">关系边</span>
+                    <span class="result-label">관계 간선</span>
                   </div>
                   <div class="result-item">
                     <span class="result-value">{{ entityTypes.length }}</span>
-                    <span class="result-label">实体类型</span>
+                    <span class="result-label">엔티티 유형</span>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- 阶段3: 完成 -->
+          <!-- 3단계: 완료 -->
           <div class="process-phase" :class="{ 'active': currentPhase === 2, 'completed': currentPhase > 2 }">
             <div class="phase-header">
               <span class="phase-num">03</span>
               <div class="phase-info">
-                <div class="phase-title">构建完成</div>
-                <div class="phase-api">准备进入下一步骤</div>
+                <div class="phase-title">구축 완료</div>
+                <div class="phase-api">다음 단계로 이동할 준비가 완료되었습니다</div>
               </div>
               <span class="phase-status" :class="getPhaseStatusClass(2)">
                 {{ getPhaseStatusText(2) }}
@@ -372,36 +372,36 @@
             </div>
           </div>
 
-          <!-- 下一步按钮 -->
+          <!-- 다음 단계 버튼 -->
           <div class="next-step-section" v-if="currentPhase >= 2">
             <button class="next-step-btn" @click="goToNextStep" :disabled="currentPhase < 2">
-              进入环境搭建
+              환경 설정으로 이동
               <span class="btn-arrow">→</span>
             </button>
           </div>
         </div>
 
-        <!-- 项目信息面板 -->
+        <!-- 프로젝트 정보 패널 -->
         <div class="project-panel">
           <div class="project-header">
             <span class="project-icon">◇</span>
-            <span class="project-title">项目信息</span>
+            <span class="project-title">프로젝트 정보</span>
           </div>
           <div class="project-details" v-if="projectData">
             <div class="project-item">
-              <span class="item-label">项目名称</span>
+              <span class="item-label">프로젝트 이름</span>
               <span class="item-value">{{ projectData.name }}</span>
             </div>
             <div class="project-item">
-              <span class="item-label">项目ID</span>
+              <span class="item-label">프로젝트 ID</span>
               <span class="item-value code">{{ projectData.project_id }}</span>
             </div>
             <div class="project-item" v-if="projectData.graph_id">
-              <span class="item-label">图谱ID</span>
+              <span class="item-label">그래프 ID</span>
               <span class="item-value code">{{ projectData.graph_id }}</span>
             </div>
             <div class="project-item">
-              <span class="item-label">模拟需求</span>
+              <span class="item-label">시뮬레이션 요구사항</span>
               <span class="item-value">{{ projectData.simulation_requirement || '-' }}</span>
             </div>
           </div>
@@ -421,29 +421,29 @@ import * as d3 from 'd3'
 const route = useRoute()
 const router = useRouter()
 
-// 当前项目ID（可能从'new'变为实际ID）
+// 현재 프로젝트 ID('new'에서 실제 ID로 바뀔 수 있음)
 const currentProjectId = ref(route.params.projectId)
 
-// 状态
+// 상태
 const loading = ref(true)
 const graphLoading = ref(false)
 const error = ref('')
 const projectData = ref(null)
 const graphData = ref(null)
 const buildProgress = ref(null)
-const ontologyProgress = ref(null) // 本体生成进度
-const currentPhase = ref(-1) // -1: 上传中, 0: 本体生成中, 1: 图谱构建, 2: 完成
-const selectedItem = ref(null) // 选中的节点或边
+const ontologyProgress = ref(null) // 온톨로지 생성 진행률
+const currentPhase = ref(-1) // -1: 업로드 중, 0: 온톨로지 생성 중, 1: 그래프 구축, 2: 완료
+const selectedItem = ref(null) // 선택한 노드 또는 간선
 const isFullScreen = ref(false)
 
-// DOM引用
+// DOM 참조
 const graphContainer = ref(null)
 const graphSvg = ref(null)
 
-// 轮询定时器
+// 폴링 타이머
 let pollTimer = null
 
-// 计算属性
+// 계산 속성
 const statusClass = computed(() => {
   if (error.value) return 'error'
   if (currentPhase.value >= 2) return 'completed'
@@ -451,11 +451,11 @@ const statusClass = computed(() => {
 })
 
 const statusText = computed(() => {
-  if (error.value) return '构建失败'
-  if (currentPhase.value >= 2) return '构建完成'
-  if (currentPhase.value === 1) return '图谱构建中'
-  if (currentPhase.value === 0) return '本体生成中'
-  return '初始化中'
+  if (error.value) return '구축 실패'
+  if (currentPhase.value >= 2) return '구축 완료'
+  if (currentPhase.value === 1) return '그래프 구축 중'
+  if (currentPhase.value === 0) return '온톨로지 생성 중'
+  return '초기화 중'
 })
 
 const entityTypes = computed(() => {
@@ -475,30 +475,30 @@ const entityTypes = computed(() => {
   return Object.values(typeMap)
 })
 
-// 方法
+// 메서드
 const goHome = () => {
   router.push('/')
 }
 
 const goToNextStep = () => {
-  // TODO: 进入环境搭建步骤
-  alert('环境搭建功能开发中...')
+  // TODO: 환경 설정 단계로 이동
+  alert('환경 설정 기능을 개발 중입니다...')
 }
 
 const toggleFullScreen = () => {
   isFullScreen.value = !isFullScreen.value
-  // Wait for transition to finish then re-render graph
+  // 전환이 끝나면 그래프를 다시 렌더링합니다
   setTimeout(() => {
     renderGraph()
   }, 350) 
 }
 
-// 关闭详情面板
+// 상세 패널 닫기
 const closeDetailPanel = () => {
   selectedItem.value = null
 }
 
-// 格式化日期
+// 날짜 형식 지정
 const formatDate = (dateStr) => {
   if (!dateStr) return '-'
   try {
@@ -515,7 +515,7 @@ const formatDate = (dateStr) => {
   }
 }
 
-// 选中节点
+// 노드 선택
 const selectNode = (nodeData, color) => {
   selectedItem.value = {
     type: 'node',
@@ -525,7 +525,7 @@ const selectNode = (nodeData, color) => {
   }
 }
 
-// 选中边
+// 간선 선택
 const selectEdge = (edgeData) => {
   selectedItem.value = {
     type: 'edge',
@@ -540,64 +540,64 @@ const getPhaseStatusClass = (phase) => {
 }
 
 const getPhaseStatusText = (phase) => {
-  if (currentPhase.value > phase) return '已完成'
+  if (currentPhase.value > phase) return '완료'
   if (currentPhase.value === phase) {
     if (phase === 1 && buildProgress.value) {
       return `${buildProgress.value.progress}%`
     }
-    return '进行中'
+    return '진행 중'
   }
-  return '等待中'
+  return '대기 중'
 }
 
-// 初始化 - 处理新建项目或加载已有项目
+// 초기화 - 새 프로젝트 처리 또는 기존 프로젝트 로드
 const initProject = async () => {
   const paramProjectId = route.params.projectId
   
   if (paramProjectId === 'new') {
-    // 新建项目：从 store 获取待上传的数据
+    // 새 프로젝트: store에서 업로드 대기 데이터를 가져옵니다
     await handleNewProject()
   } else {
-    // 加载已有项目
+    // 기존 프로젝트를 불러옵니다
     currentProjectId.value = paramProjectId
     await loadProject()
   }
 }
 
-// 处理新建项目 - 调用 ontology/generate API
+// 새 프로젝트 처리 - ontology/generate API 호출
 const handleNewProject = async () => {
   const pending = getPendingUpload()
   
   if (!pending.isPending || pending.files.length === 0) {
-    error.value = '没有待上传的文件，请返回首页重新操作'
+    error.value = '업로드 대기 파일이 없습니다. /process/new 페이지를 새로고침했다면 홈에서 파일을 다시 선택해야 합니다.'
     loading.value = false
     return
   }
   
   try {
     loading.value = true
-    currentPhase.value = 0 // 本体生成阶段
-    ontologyProgress.value = { message: '正在上传文件并分析文档...' }
+    currentPhase.value = 0 // 온톨로지 생성 단계
+    ontologyProgress.value = { message: '파일을 업로드하고 문서를 분석하는 중...' }
     
-    // 构建 FormData
+    // FormData를 구성합니다
     const formDataObj = new FormData()
     pending.files.forEach(file => {
       formDataObj.append('files', file)
     })
     formDataObj.append('simulation_requirement', pending.simulationRequirement)
     
-    // 调用本体生成 API
+    // 온톨로지 생성 API를 호출합니다
     const response = await generateOntology(formDataObj)
     
     if (response.success) {
-      // 清除待上传数据
+      // 업로드 대기 데이터를 지웁니다
       clearPendingUpload()
       
-      // 更新项目ID和数据
+      // 프로젝트 ID와 데이터를 갱신합니다
       currentProjectId.value = response.data.project_id
       projectData.value = response.data
       
-      // 更新URL（不刷新页面）
+      // URL을 갱신합니다(페이지 새로고침 없음)
       router.replace({
         name: 'Process',
         params: { projectId: response.data.project_id }
@@ -605,20 +605,20 @@ const handleNewProject = async () => {
       
       ontologyProgress.value = null
       
-      // 自动开始图谱构建
+      // 그래프 구축을 자동으로 시작합니다
       await startBuildGraph()
     } else {
-      error.value = response.error || '本体生成失败'
+      error.value = response.error || '온톨로지 생성 실패'
     }
   } catch (err) {
-    console.error('Handle new project error:', err)
-    error.value = '项目初始化失败: ' + (err.message || '未知错误')
+    console.error('새 프로젝트 처리 오류:', err)
+    error.value = '프로젝트 초기화 실패: ' + (err.message || '알 수 없는 오류')
   } finally {
     loading.value = false
   }
 }
 
-// 加载已有项目数据
+// 기존 프로젝트 데이터를 불러옵니다
 const loadProject = async () => {
   try {
     loading.value = true
@@ -628,28 +628,28 @@ const loadProject = async () => {
       projectData.value = response.data
       updatePhaseByStatus(response.data.status)
       
-      // 自动开始图谱构建
+      // 그래프 구축을 자동으로 시작합니다
       if (response.data.status === 'ontology_generated' && !response.data.graph_id) {
         await startBuildGraph()
       }
       
-      // 继续轮询构建中的任务
+      // 구축 중인 작업을 계속 폴링합니다
       if (response.data.status === 'graph_building' && response.data.graph_build_task_id) {
         currentPhase.value = 1
         startPollingTask(response.data.graph_build_task_id)
       }
       
-      // 加载已完成的图谱
+      // 완료된 그래프를 불러옵니다
       if (response.data.status === 'graph_completed' && response.data.graph_id) {
         currentPhase.value = 2
         await loadGraph(response.data.graph_id)
       }
     } else {
-      error.value = response.error || '加载项目失败'
+      error.value = response.error || '프로젝트 로드 실패'
     }
   } catch (err) {
-    console.error('Load project error:', err)
-    error.value = '加载项目失败: ' + (err.message || '未知错误')
+    console.error('프로젝트 로드 오류:', err)
+    error.value = '프로젝트 로드 실패: ' + (err.message || '알 수 없는 오류')
   } finally {
     loading.value = false
   }
@@ -668,67 +668,67 @@ const updatePhaseByStatus = (status) => {
       currentPhase.value = 2
       break
     case 'failed':
-      error.value = projectData.value?.error || '处理失败'
+      error.value = projectData.value?.error || '처리에 실패했습니다'
       break
   }
 }
 
-// 开始构建图谱
+// 그래프 구축 시작
 const startBuildGraph = async () => {
   try {
     currentPhase.value = 1
-    // 设置初始进度
+    // 초기 진행률을 설정합니다
     buildProgress.value = {
       progress: 0,
-      message: '正在启动图谱构建...'
+      message: '그래프 구축을 시작하는 중...'
     }
     
     const response = await buildGraph({ project_id: currentProjectId.value })
     
     if (response.success) {
-      buildProgress.value.message = '图谱构建任务已启动...'
+      buildProgress.value.message = '그래프 구축 작업이 시작되었습니다...'
       
-      // 保存 task_id 用于轮询
+      // 폴링에 사용할 task_id를 저장합니다
       const taskId = response.data.task_id
       
-      // 启动图谱数据轮询（独立于任务状态轮询）
+      // 그래프 데이터 폴링을 시작합니다(작업 상태 폴링과 분리)
       startGraphPolling()
       
-      // 启动任务状态轮询
+      // 작업 상태 폴링을 시작합니다
       startPollingTask(taskId)
     } else {
-      error.value = response.error || '启动图谱构建失败'
+      error.value = response.error || '그래프 구축 시작에 실패했습니다'
       buildProgress.value = null
     }
   } catch (err) {
-    console.error('Build graph error:', err)
-    error.value = '启动图谱构建失败: ' + (err.message || '未知错误')
+    console.error('그래프 구축 오류:', err)
+    error.value = '그래프 구축 시작 실패: ' + (err.message || '알 수 없는 오류')
     buildProgress.value = null
   }
 }
 
-// 图谱数据轮询定时器
+// 그래프 데이터 폴링 타이머
 let graphPollTimer = null
 
-// 启动图谱数据轮询
+// 그래프 데이터 폴링 시작
 const startGraphPolling = () => {
-  // 立即获取一次
+  // 한 번 즉시 가져옵니다
   fetchGraphData()
   
-  // 每 10 秒自动获取一次图谱数据
+  // 10초마다 그래프 데이터를 자동으로 가져옵니다
   graphPollTimer = setInterval(async () => {
     await fetchGraphData()
   }, 10000)
 }
 
-// 手动刷新图谱
+// 그래프 수동 새로고침
 const refreshGraph = async () => {
   graphLoading.value = true
   await fetchGraphData()
   graphLoading.value = false
 }
 
-// 停止图谱数据轮询
+// 그래프 데이터 폴링 중지
 const stopGraphPolling = () => {
   if (graphPollTimer) {
     clearInterval(graphPollTimer)
@@ -736,17 +736,17 @@ const stopGraphPolling = () => {
   }
 }
 
-// 获取图谱数据
+// 그래프 데이터 가져오기
 const fetchGraphData = async () => {
   try {
-    // 先获取项目信息以获取 graph_id
+    // 먼저 graph_id를 얻기 위해 프로젝트 정보를 가져옵니다
     const projectResponse = await getProject(currentProjectId.value)
     
     if (projectResponse.success && projectResponse.data.graph_id) {
       const graphId = projectResponse.data.graph_id
       projectData.value = projectResponse.data
       
-      // 获取图谱数据
+      // 그래프 데이터를 가져옵니다
       const graphResponse = await getGraphData(graphId)
       
       if (graphResponse.success && graphResponse.data) {
@@ -754,9 +754,9 @@ const fetchGraphData = async () => {
         const newNodeCount = newData.node_count || newData.nodes?.length || 0
         const oldNodeCount = graphData.value?.node_count || graphData.value?.nodes?.length || 0
         
-        console.log('Fetching graph data, nodes:', newNodeCount, 'edges:', newData.edge_count || newData.edges?.length || 0)
+        console.log('그래프 데이터를 가져오는 중, 노드:', newNodeCount, '간선:', newData.edge_count || newData.edges?.length || 0)
         
-        // 数据有变化时更新渲染
+        // 데이터가 바뀌면 렌더링을 갱신합니다
         if (newNodeCount !== oldNodeCount || !graphData.value) {
           graphData.value = newData
           await nextTick()
@@ -765,22 +765,22 @@ const fetchGraphData = async () => {
       }
     }
   } catch (err) {
-    console.log('Graph data fetch:', err.message || 'not ready')
+    console.log('그래프 데이터 가져오기:', err.message || '아직 준비되지 않음')
   }
 }
 
-// 轮询任务状态
+// 작업 상태 폴링
 const startPollingTask = (taskId) => {
-  // 立即执行一次查询
+    // 한 번 즉시 조회합니다
   pollTaskStatus(taskId)
   
-  // 然后定时轮询
+    // 이후 주기적으로 폴링합니다
   pollTimer = setInterval(() => {
     pollTaskStatus(taskId)
   }, 2000)
 }
 
-// 查询任务状态
+// 작업 상태 조회
 const pollTaskStatus = async (taskId) => {
   try {
     const response = await getTaskStatus(taskId)
@@ -788,51 +788,51 @@ const pollTaskStatus = async (taskId) => {
     if (response.success) {
       const task = response.data
       
-      // 更新进度显示
+      // 진행률 표시를 갱신합니다
       buildProgress.value = {
         progress: task.progress || 0,
-        message: task.message || '处理中...'
+      message: task.message || '처리 중...'
       }
       
-      console.log('Task status:', task.status, 'Progress:', task.progress)
+      console.log('작업 상태:', task.status, '진행률:', task.progress)
       
       if (task.status === 'completed') {
-        console.log('✅ 图谱构建完成，正在加载完整数据...')
+        console.log('✅ 그래프 구축이 완료되어 전체 데이터를 불러오는 중입니다...')
         
         stopPolling()
         stopGraphPolling()
         currentPhase.value = 2
         
-        // 更新进度显示为完成状态
+        // 진행률 표시를 완료 상태로 갱신합니다
         buildProgress.value = {
           progress: 100,
-          message: '构建完成，正在加载图谱...'
+          message: '구축 완료, 그래프를 불러오는 중...'
         }
         
-        // 重新加载项目数据获取 graph_id
+        // graph_id를 얻기 위해 프로젝트 데이터를 다시 불러옵니다
         const projectResponse = await getProject(currentProjectId.value)
         if (projectResponse.success) {
           projectData.value = projectResponse.data
           
-          // 最终加载完整图谱数据
+          // 최종적으로 완전한 그래프 데이터를 불러옵니다
           if (projectResponse.data.graph_id) {
-            console.log('📊 加载完整图谱:', projectResponse.data.graph_id)
+            console.log('📊 전체 그래프 불러오기:', projectResponse.data.graph_id)
             await loadGraph(projectResponse.data.graph_id)
-            console.log('✅ 图谱加载完成')
+            console.log('✅ 그래프 불러오기가 완료되었습니다')
           }
         }
         
-        // 清除进度显示
+        // 진행률 표시를 지웁니다
         buildProgress.value = null
       } else if (task.status === 'failed') {
         stopPolling()
         stopGraphPolling()
-        error.value = '图谱构建失败: ' + (task.error || '未知错误')
+        error.value = '그래프 구축 실패: ' + (task.error || '알 수 없음')
         buildProgress.value = null
       }
     }
   } catch (err) {
-    console.error('Poll task error:', err)
+    console.error('작업 폴링 오류:', err)
   }
 }
 
@@ -843,7 +843,7 @@ const stopPolling = () => {
   }
 }
 
-// 加载图谱数据
+// 그래프 데이터 불러오기
 const loadGraph = async (graphId) => {
   try {
     graphLoading.value = true
@@ -855,36 +855,36 @@ const loadGraph = async (graphId) => {
       renderGraph()
     }
   } catch (err) {
-    console.error('Load graph error:', err)
+    console.error('그래프 로드 오류:', err)
   } finally {
     graphLoading.value = false
   }
 }
 
-// 渲染图谱 (D3.js)
+// 그래프 렌더링(D3.js)
 const renderGraph = () => {
   if (!graphSvg.value || !graphData.value) {
-    console.log('Cannot render: svg or data missing')
+    console.log('렌더링할 수 없습니다: SVG 또는 데이터가 없습니다')
     return
   }
   
   const container = graphContainer.value
   if (!container) {
-    console.log('Cannot render: container missing')
+    console.log('렌더링할 수 없습니다: 컨테이너가 없습니다')
     return
   }
   
-  // 获取容器尺寸
+  // 컨테이너 크기를 가져옵니다
   const rect = container.getBoundingClientRect()
   const width = rect.width || 800
   const height = (rect.height || 600) - 60
   
   if (width <= 0 || height <= 0) {
-    console.log('Cannot render: invalid dimensions', width, height)
+    console.log('렌더링할 수 없습니다: 유효하지 않은 크기', width, height)
     return
   }
   
-  console.log('Rendering graph:', width, 'x', height)
+  console.log('그래프 렌더링:', width, 'x', height)
   
   const svg = d3.select(graphSvg.value)
     .attr('width', width)
@@ -893,23 +893,23 @@ const renderGraph = () => {
   
   svg.selectAll('*').remove()
   
-  // 处理节点数据
+  // 노드 데이터를 처리합니다
   const nodesData = graphData.value.nodes || []
   const edgesData = graphData.value.edges || []
   
   if (nodesData.length === 0) {
-    console.log('No nodes to render')
-    // 显示空状态
+    console.log('렌더링할 노드가 없습니다')
+    // 빈 상태를 표시합니다
     svg.append('text')
       .attr('x', width / 2)
       .attr('y', height / 2)
       .attr('text-anchor', 'middle')
       .attr('fill', '#999')
-      .text('等待图谱数据...')
+      .text('그래프 데이터를 기다리는 중...')
     return
   }
   
-  // 创建节点映射用于查找名称
+  // 이름 조회를 위해 노드 맵을 만듭니다
   const nodeMap = {}
   nodesData.forEach(n => {
     nodeMap[n.uuid] = n
@@ -917,12 +917,12 @@ const renderGraph = () => {
   
   const nodes = nodesData.map(n => ({
     id: n.uuid,
-    name: n.name || '未命名',
+    name: n.name || '이름 없음',
     type: n.labels?.find(l => l !== 'Entity' && l !== 'Node') || 'Entity',
-    rawData: n // 保存原始数据
+    rawData: n // 원본 데이터를 저장합니다
   }))
   
-  // 创建节点ID集合用于过滤有效边
+  // 유효한 간선을 거르기 위해 노드 ID 집합을 만듭니다
   const nodeIds = new Set(nodes.map(n => n.id))
   
   const edges = edgesData
@@ -930,23 +930,23 @@ const renderGraph = () => {
     .map(e => ({
       source: e.source_node_uuid,
       target: e.target_node_uuid,
-      type: e.fact_type || e.name || 'RELATED_TO',
+      type: e.fact_type || e.name || '관련됨',
       rawData: {
         ...e,
-        source_name: nodeMap[e.source_node_uuid]?.name || '未知',
-        target_name: nodeMap[e.target_node_uuid]?.name || '未知'
+        source_name: nodeMap[e.source_node_uuid]?.name || '알 수 없음',
+        target_name: nodeMap[e.target_node_uuid]?.name || '알 수 없음'
       }
     }))
   
-  console.log('Nodes:', nodes.length, 'Edges:', edges.length)
+  console.log('노드:', nodes.length, '간선:', edges.length)
   
-  // 颜色映射
+  // 색상 매핑
   const types = [...new Set(nodes.map(n => n.type))]
   const colorScale = d3.scaleOrdinal()
     .domain(types)
     .range(['#FF6B35', '#004E89', '#7B2D8E', '#1A936F', '#C5283D', '#E9724C', '#2D3436', '#6C5CE7'])
   
-  // 力导向布局
+  // 힘 기반 레이아웃
   const simulation = d3.forceSimulation(nodes)
     .force('link', d3.forceLink(edges).id(d => d.id).distance(100).strength(0.5))
     .force('charge', d3.forceManyBody().strength(-300))
@@ -955,7 +955,7 @@ const renderGraph = () => {
     .force('x', d3.forceX(width / 2).strength(0.05))
     .force('y', d3.forceY(height / 2).strength(0.05))
   
-  // 添加缩放功能
+  // 확대/축소 기능을 추가합니다
   const g = svg.append('g')
   
   svg.call(d3.zoom()
@@ -965,7 +965,7 @@ const renderGraph = () => {
       g.attr('transform', event.transform)
     }))
   
-  // 绘制边（包含可点击的透明宽线）
+  // 간선을 그립니다(클릭 가능한 투명한 넓은 선 포함)
   const linkGroup = g.append('g')
     .attr('class', 'links')
     .selectAll('g')
@@ -978,18 +978,18 @@ const renderGraph = () => {
       selectEdge(d.rawData)
     })
   
-  // 可见的细线
+  // 보이는 가는 선
   const link = linkGroup.append('line')
     .attr('stroke', '#ccc')
     .attr('stroke-width', 1.5)
     .attr('stroke-opacity', 0.6)
   
-  // 透明的宽线用于点击
+  // 클릭용 투명한 넓은 선
   linkGroup.append('line')
     .attr('stroke', 'transparent')
     .attr('stroke-width', 10)
   
-  // 边标签
+  // 간선 라벨
   const linkLabel = g.append('g')
     .attr('class', 'link-labels')
     .selectAll('text')
@@ -1001,7 +1001,7 @@ const renderGraph = () => {
     .attr('text-anchor', 'middle')
     .text(d => d.type.length > 15 ? d.type.substring(0, 12) + '...' : d.type)
   
-  // 绘制节点
+  // 노드를 그립니다
   const node = g.append('g')
     .attr('class', 'nodes')
     .selectAll('g')
@@ -1033,20 +1033,20 @@ const renderGraph = () => {
     .attr('fill', '#333')
     .attr('font-family', 'JetBrains Mono, monospace')
   
-  // 点击空白处关闭详情面板
+  // 빈 공간을 클릭하면 상세 패널을 닫습니다
   svg.on('click', () => {
     closeDetailPanel()
   })
   
   simulation.on('tick', () => {
-    // 更新所有边的位置（包括可见线和透明点击区域）
+    // 모든 간선 위치를 갱신합니다(보이는 선과 투명 클릭 영역 포함)
     linkGroup.selectAll('line')
       .attr('x1', d => d.source.x)
       .attr('y1', d => d.source.y)
       .attr('x2', d => d.target.x)
       .attr('y2', d => d.target.y)
     
-    // 更新边标签位置
+    // 간선 라벨 위치를 갱신합니다
     linkLabel
       .attr('x', d => (d.source.x + d.target.x) / 2)
       .attr('y', d => (d.source.y + d.target.y) / 2 - 5)
@@ -1072,14 +1072,14 @@ const renderGraph = () => {
   }
 }
 
-// 监听图谱数据变化
+// 그래프 데이터 변화를 감시합니다
 watch(graphData, () => {
   if (graphData.value) {
     nextTick(() => renderGraph())
   }
 })
 
-// 生命周期
+// 생명주기
 onMounted(() => {
   initProject()
 })
@@ -1091,7 +1091,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* 变量 */
+/* 변수 */
 :root {
   --black: #000000;
   --white: #FFFFFF;
@@ -1108,7 +1108,7 @@ onUnmounted(() => {
   overflow: hidden; /* Prevent body scroll in fullscreen */
 }
 
-/* 导航栏 */
+/* 내비게이션 바 */
 .navbar {
   display: flex;
   align-items: center;
@@ -1194,14 +1194,14 @@ onUnmounted(() => {
   color: #999;
 }
 
-/* 主内容区 */
+/* 주요 콘텐츠 영역 */
 .main-content {
   display: flex;
   height: calc(100vh - 56px);
   position: relative;
 }
 
-/* 左侧面板 - 50% default */
+/* 왼쪽 패널 - 기본 50% */
 .left-panel {
   width: 50%;
   flex: none; /* Fixed width initially */
@@ -1311,7 +1311,7 @@ onUnmounted(() => {
   to { transform: rotate(360deg); }
 }
 
-/* 图谱容器 */
+/* 그래프 컨테이너 */
 .graph-container {
   flex: 1;
   position: relative;
@@ -1427,7 +1427,7 @@ onUnmounted(() => {
   animation: pulse 1s infinite;
 }
 
-/* 节点/边详情面板 */
+/* 노드/간선 상세 패널 */
 .detail-panel {
   position: absolute;
   top: 16px;
@@ -1543,7 +1543,7 @@ onUnmounted(() => {
   color: #666;
 }
 
-/* 边详情关系展示 */
+/* 간선 상세 관계 표시 */
 .edge-relation {
   display: flex;
   align-items: center;
@@ -1587,7 +1587,7 @@ onUnmounted(() => {
   border-bottom: 1px solid #E0E0E0;
 }
 
-/* Properties 属性列表 */
+/* 속성 목록 */
 .properties-list {
   margin-top: 8px;
   padding: 10px;
@@ -1616,7 +1616,7 @@ onUnmounted(() => {
   word-break: break-word;
 }
 
-/* Episodes 列表 */
+/* 에피소드 목록 */
 .episodes-list {
   margin-top: 8px;
   display: flex;
@@ -1641,7 +1641,7 @@ onUnmounted(() => {
   margin-bottom: 10px;
 }
 
-/* 图谱图例 */
+/* 그래프 범례 */
 .graph-legend {
   display: flex;
   flex-wrap: wrap;
@@ -1672,7 +1672,7 @@ onUnmounted(() => {
   color: #999;
 }
 
-/* 右侧面板 - 50% default */
+/* 오른쪽 패널 - 기본 50% */
 .right-panel {
   width: 50%;
   flex: none;
@@ -1702,14 +1702,14 @@ onUnmounted(() => {
   margin-right: 8px;
 }
 
-/* 流程内容 */
+/* 흐름 내용 */
 .process-content {
   flex: 1;
   overflow-y: auto;
   padding: 24px;
 }
 
-/* 流程阶段 */
+/* 흐름 단계 */
 .process-phase {
   margin-bottom: 24px;
   border: 1px solid #E0E0E0;
@@ -1795,12 +1795,12 @@ onUnmounted(() => {
   color: #fff;
 }
 
-/* 阶段详情 */
+/* 단계 상세 */
 .phase-detail {
   padding: 16px;
 }
 
-/* 实体标签 */
+/* 엔티티 라벨 */
 .entity-tags {
   display: flex;
   flex-wrap: wrap;
@@ -1815,7 +1815,7 @@ onUnmounted(() => {
   color: #333;
 }
 
-/* 关系列表 */
+/* 관계 목록 */
 .relation-list {
   font-size: 0.8rem;
 }
@@ -1852,7 +1852,7 @@ onUnmounted(() => {
   font-size: 0.75rem;
 }
 
-/* 本体生成进度 */
+/* 온톨로지 생성 진행률 */
 .ontology-progress {
   display: flex;
   align-items: center;
@@ -1876,7 +1876,7 @@ onUnmounted(() => {
   color: #333;
 }
 
-/* 等待状态 */
+/* 대기 상태 */
 .waiting-state {
   padding: 16px;
   background: #F9F9F9;
@@ -1889,7 +1889,7 @@ onUnmounted(() => {
   color: #999;
 }
 
-/* 进度条 */
+/* 진행률 표시줄 */
 .progress-bar {
   height: 6px;
   background: #E0E0E0;
@@ -1918,7 +1918,7 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
-/* 构建结果 */
+/* 구축 결과 */
 .build-result {
   display: flex;
   gap: 16px;
@@ -1946,7 +1946,7 @@ onUnmounted(() => {
   letter-spacing: 0.05em;
 }
 
-/* 下一步按钮 */
+/* 다음 단계 버튼 */
 .next-step-section {
   margin-top: 24px;
   padding-top: 24px;
@@ -1983,7 +1983,7 @@ onUnmounted(() => {
   font-size: 1.2rem;
 }
 
-/* 项目信息面板 */
+/* 프로젝트 정보 패널 */
 .project-panel {
   border-top: 1px solid #E0E0E0;
   background: #FAFAFA;
@@ -2041,7 +2041,7 @@ onUnmounted(() => {
   color: #666;
 }
 
-/* 响应式 */
+/* 반응형 */
 @media (max-width: 1024px) {
   .main-content {
     flex-direction: column;

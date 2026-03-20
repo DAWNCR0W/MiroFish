@@ -1,6 +1,6 @@
 <template>
   <div class="main-view">
-    <!-- Header -->
+    <!-- 헤더 -->
     <header class="app-header">
       <div class="header-left">
         <div class="brand" @click="router.push('/')">MIROFISH</div>
@@ -15,15 +15,15 @@
             :class="{ active: viewMode === mode }"
             @click="viewMode = mode"
           >
-            {{ { graph: '图谱', split: '双栏', workbench: '工作台' }[mode] }}
+            {{ { graph: '그래프', split: '분할', workbench: '작업공간' }[mode] }}
           </button>
         </div>
       </div>
 
       <div class="header-right">
         <div class="workflow-step">
-          <span class="step-num">Step 5/5</span>
-          <span class="step-name">深度互动</span>
+          <span class="step-num">5단계 / 5단계</span>
+          <span class="step-name">심층 상호작용</span>
         </div>
         <div class="step-divider"></div>
         <span class="status-indicator" :class="statusClass">
@@ -33,9 +33,9 @@
       </div>
     </header>
 
-    <!-- Main Content Area -->
+    <!-- 주요 콘텐츠 영역 -->
     <main class="content-area">
-      <!-- Left Panel: Graph -->
+      <!-- 왼쪽 패널: 그래프 -->
       <div class="panel-wrapper left" :style="leftPanelStyle">
         <GraphPanel 
           :graphData="graphData"
@@ -47,7 +47,7 @@
         />
       </div>
 
-      <!-- Right Panel: Step5 深度互动 -->
+      <!-- 오른쪽 패널: 5단계 심층 상호작용 -->
       <div class="panel-wrapper right" :style="rightPanelStyle">
         <Step5Interaction
           :reportId="currentReportId"
@@ -73,15 +73,15 @@ import { getReport } from '../api/report'
 const route = useRoute()
 const router = useRouter()
 
-// Props
+// 속성
 const props = defineProps({
   reportId: String
 })
 
-// Layout State - 默认切换到工作台视角
+// 레이아웃 상태 - 기본적으로 작업 공간 시점으로 전환합니다
 const viewMode = ref('workbench')
 
-// Data State
+// 데이터 상태
 const currentReportId = ref(route.params.reportId)
 const simulationId = ref(null)
 const projectData = ref(null)
@@ -90,7 +90,7 @@ const graphLoading = ref(false)
 const systemLogs = ref([])
 const currentStatus = ref('ready') // ready | processing | completed | error
 
-// --- Computed Layout Styles ---
+// --- 계산된 레이아웃 스타일 ---
 const leftPanelStyle = computed(() => {
   if (viewMode.value === 'graph') return { width: '100%', opacity: 1, transform: 'translateX(0)' }
   if (viewMode.value === 'workbench') return { width: '0%', opacity: 0, transform: 'translateX(-20px)' }
@@ -103,19 +103,19 @@ const rightPanelStyle = computed(() => {
   return { width: '50%', opacity: 1, transform: 'translateX(0)' }
 })
 
-// --- Status Computed ---
+// --- 상태 계산 ---
 const statusClass = computed(() => {
   return currentStatus.value
 })
 
 const statusText = computed(() => {
-  if (currentStatus.value === 'error') return 'Error'
-  if (currentStatus.value === 'completed') return 'Completed'
-  if (currentStatus.value === 'processing') return 'Processing'
-  return 'Ready'
+  if (currentStatus.value === 'error') return '오류'
+  if (currentStatus.value === 'completed') return '완료'
+  if (currentStatus.value === 'processing') return '처리 중'
+  return '대기 중'
 })
 
-// --- Helpers ---
+// --- 보조 함수 ---
 const addLog = (msg) => {
   const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) + '.' + new Date().getMilliseconds().toString().padStart(3, '0')
   systemLogs.value.push({ time, msg })
@@ -128,7 +128,7 @@ const updateStatus = (status) => {
   currentStatus.value = status
 }
 
-// --- Layout Methods ---
+// --- 레이아웃 메서드 ---
 const toggleMaximize = (target) => {
   if (viewMode.value === target) {
     viewMode.value = 'split'
@@ -137,31 +137,31 @@ const toggleMaximize = (target) => {
   }
 }
 
-// --- Data Logic ---
+// --- 데이터 로직 ---
 const loadReportData = async () => {
   try {
-    addLog(`加载报告数据: ${currentReportId.value}`)
+    addLog(`보고서 데이터 로드: ${currentReportId.value}`)
     
-    // 获取 report 信息以获取 simulation_id
+    // simulation_id를 얻기 위해 보고서 정보를 가져옵니다
     const reportRes = await getReport(currentReportId.value)
     if (reportRes.success && reportRes.data) {
       const reportData = reportRes.data
       simulationId.value = reportData.simulation_id
       
       if (simulationId.value) {
-        // 获取 simulation 信息
+        // 시뮬레이션 정보를 가져옵니다
         const simRes = await getSimulation(simulationId.value)
         if (simRes.success && simRes.data) {
           const simData = simRes.data
           
-          // 获取 project 信息
+          // 프로젝트 정보를 가져옵니다
           if (simData.project_id) {
             const projRes = await getProject(simData.project_id)
             if (projRes.success && projRes.data) {
               projectData.value = projRes.data
-              addLog(`项目加载成功: ${projRes.data.project_id}`)
+              addLog(`프로젝트 로드 성공: ${projRes.data.project_id}`)
               
-              // 获取 graph 数据
+              // 그래프 데이터를 가져옵니다
               if (projRes.data.graph_id) {
                 await loadGraph(projRes.data.graph_id)
               }
@@ -170,10 +170,10 @@ const loadReportData = async () => {
         }
       }
     } else {
-      addLog(`获取报告信息失败: ${reportRes.error || '未知错误'}`)
+      addLog(`보고서 정보 가져오기 실패: ${reportRes.error || '알 수 없는 오류'}`)
     }
   } catch (err) {
-    addLog(`加载异常: ${err.message}`)
+    addLog(`불러오는 중 예외가 발생했습니다: ${err.message}`)
   }
 }
 
@@ -184,10 +184,10 @@ const loadGraph = async (graphId) => {
     const res = await getGraphData(graphId)
     if (res.success) {
       graphData.value = res.data
-      addLog('图谱数据加载成功')
+      addLog('그래프 데이터 로드 완료')
     }
   } catch (err) {
-    addLog(`图谱加载失败: ${err.message}`)
+    addLog(`그래프 로드 실패: ${err.message}`)
   } finally {
     graphLoading.value = false
   }
@@ -199,7 +199,7 @@ const refreshGraph = () => {
   }
 }
 
-// Watch route params
+// 라우트 매개변수를 감시합니다
 watch(() => route.params.reportId, (newId) => {
   if (newId && newId !== currentReportId.value) {
     currentReportId.value = newId
@@ -208,7 +208,7 @@ watch(() => route.params.reportId, (newId) => {
 }, { immediate: true })
 
 onMounted(() => {
-  addLog('InteractionView 初始化')
+  addLog('상호작용 화면을 초기화했습니다')
   loadReportData()
 })
 </script>
