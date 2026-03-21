@@ -7,15 +7,18 @@ import json
 from typing import Any, Dict, List, Optional
 
 from ..utils.llm_client import LLMClient
+from ..utils.logger import get_logger
 from ..utils.ontology import normalize_ontology
+
+logger = get_logger("mirofish.local_graph_extractor")
 
 
 class LocalGraphExtractor:
     """LLM 기반 로컬 그래프 추출기"""
 
     ORG_HINTS = [
-        "大学", "学院", "学校", "公司", "集团", "机构", "组织", "协会",
-        "政府", "部门", "委员会", "媒体", "平台", "医院", "实验室",
+        "\u5927\u5b66", "\u5b66\u9662", "\u5b66\u6821", "\u516c\u53f8", "\u96c6\u56e2", "\u673a\u6784", "\u7ec4\u7ec7", "\u534f\u4f1a",
+        "\u653f\u5e9c", "\u90e8\u95e8", "\u59d4\u5458\u4f1a", "\u5a92\u4f53", "\u5e73\u53f0", "\u533b\u9662", "\u5b9e\u9a8c\u5ba4",
         "university", "college", "company", "group", "agency", "organization",
         "committee", "media", "platform", "hospital", "lab",
     ]
@@ -24,11 +27,28 @@ class LocalGraphExtractor:
         self.llm = llm_client or LLMClient()
 
     @staticmethod
+    def _decode_jsonish(value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+
+        stripped = value.strip()
+        if not stripped or stripped[0] not in "[{":
+            return value
+
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            return value
+
+    @staticmethod
     def _normalize_token(value: str) -> str:
         return "".join(ch.lower() for ch in (value or "").strip() if ch.isalnum())
 
     @classmethod
     def _normalize_aliases(cls, aliases: Any, primary_name: str = "") -> List[str]:
+        aliases = cls._decode_jsonish(aliases)
+        if isinstance(aliases, str):
+            aliases = [aliases]
         if not isinstance(aliases, list):
             return []
 
@@ -49,6 +69,53 @@ class LocalGraphExtractor:
             normalized_aliases.append(cleaned)
 
         return normalized_aliases
+
+    @classmethod
+    def _coerce_attribute_map(cls, raw_attributes: Any) -> Dict[str, Any]:
+        candidate = cls._decode_jsonish(raw_attributes)
+
+        if isinstance(candidate, dict):
+            return {
+                str(key).strip(): value
+                for key, value in candidate.items()
+                if str(key).strip()
+            }
+
+        if isinstance(candidate, list):
+            normalized: Dict[str, Any] = {}
+            for item in candidate:
+                item = cls._decode_jsonish(item)
+                if not isinstance(item, dict):
+                    continue
+
+                name = str(item.get("name") or "").strip()
+                if name and "value" in item:
+                    normalized[name] = item.get("value")
+                    continue
+
+                if len(item) == 1:
+                    key, value = next(iter(item.items()))
+                    key = str(key).strip()
+                    if key:
+                        normalized[key] = value
+
+            return normalized
+
+        return {}
+
+    @classmethod
+    def _coerce_object_list(cls, raw_items: Any) -> List[Dict[str, Any]]:
+        candidate = cls._decode_jsonish(raw_items)
+        if not isinstance(candidate, list):
+            return []
+
+        normalized: List[Dict[str, Any]] = []
+        for item in candidate:
+            item = cls._decode_jsonish(item)
+            if isinstance(item, dict):
+                normalized.append(item)
+
+        return normalized
 
     def _normalize_entity_type(self, value: str, allowed_types: List[str], name: str = "") -> Optional[str]:
         if not allowed_types:
@@ -87,7 +154,7 @@ class LocalGraphExtractor:
 
         allowed_attrs = attribute_allowlist.get(entity_type, set())
         attributes = {}
-        for key, value in (entity.get("attributes") or {}).items():
+        for key, value in self._coerce_attribute_map(entity.get("attributes")).items():
             if key in allowed_attrs and value not in [None, "", [], {}]:
                 attributes[key] = value
 
@@ -125,7 +192,7 @@ class LocalGraphExtractor:
 
         attributes = {}
         allowed_attrs = edge_attribute_allowlist.get(relation_type, set())
-        for key, value in (relationship.get("attributes") or {}).items():
+        for key, value in self._coerce_attribute_map(relationship.get("attributes")).items():
             if key in allowed_attrs and value not in [None, "", [], {}]:
                 attributes[key] = value
 
@@ -196,7 +263,7 @@ class LocalGraphExtractor:
 9. known entities에 이미 있는 이름이 보이면 그 엔티티를 재사용하고, 관계도 그 이름을 기준으로 연결한다
 10. 텍스트에 명시적인 소속, 보도, 대응, 지지, 반대, 협력 관계가 있으면 relationships를 비우지 말고 최소 1개 이상 추출한다
 11. 서로 다른 언어/문자 표기라도 같은 실제 엔티티면 새 엔티티를 만들지 말고 기존 엔티티의 name을 재사용한다
-12. 다른 언어 표기, 번역명, 음역명은 entities[].aliases에 넣는다. 예: Wuhan University / 武汉大学 / 우한대학교
+12. 다른 언어 표기, 번역명, 음역명은 entities[].aliases에 넣는다. 예: Wuhan University / local-script alias / 우한대학교
 13. relationships의 source_name과 target_name은 가능하면 known entities의 canonical name을 그대로 사용한다
 """
 
@@ -211,7 +278,10 @@ class LocalGraphExtractor:
 
 엔티티와 관계를 추출해 주세요. summary는 이 구간이 새롭게 추가한 정보를 한국어로 간단히 설명해 주세요."""
 
-        for attempt in range(3):
+        last_error = None
+        max_attempts = 3
+
+        for attempt in range(max_attempts):
             try:
                 raw = self.llm.chat_json(
                     messages=[
@@ -222,9 +292,12 @@ class LocalGraphExtractor:
                     max_tokens=4096,
                 )
 
+                if not isinstance(raw, dict):
+                    raise ValueError("LLM 응답이 객체 형식이 아님")
+
                 entities = []
                 seen_entities = set()
-                for item in raw.get("entities", []):
+                for item in self._coerce_object_list(raw.get("entities")):
                     sanitized = self._sanitize_entity(
                         item,
                         entity_types,
@@ -243,7 +316,7 @@ class LocalGraphExtractor:
 
                 relationships = []
                 seen_relationships = set()
-                for item in raw.get("relationships", []):
+                for item in self._coerce_object_list(raw.get("relationships")):
                     sanitized = self._sanitize_relationship(
                         item,
                         edge_types,
@@ -268,11 +341,22 @@ class LocalGraphExtractor:
                     "relationships": relationships,
                     "summary": (raw.get("summary") or "").strip(),
                 }
-            except Exception:
-                continue
+            except Exception as error:
+                last_error = error
+                if attempt == max_attempts - 1:
+                    logger.exception(
+                        "그래프 추출이 반복 실패했습니다: text_length=%s, entity_types=%s, edge_types=%s",
+                        len(text),
+                        entity_types,
+                        edge_types,
+                    )
+                else:
+                    logger.warning(
+                        "그래프 추출 재시도 예정 (%s/%s): text_length=%s, error=%s",
+                        attempt + 1,
+                        max_attempts,
+                        len(text),
+                        error,
+                    )
 
-        return {
-            "entities": [],
-            "relationships": [],
-            "summary": "",
-        }
+        raise RuntimeError("그래프 추출에 반복 실패했습니다") from last_error

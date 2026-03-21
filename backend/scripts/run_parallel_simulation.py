@@ -90,6 +90,7 @@ sys.path.insert(0, _scripts_dir)
 sys.path.insert(0, _backend_dir)
 
 from llm_runtime_config import load_runtime_env, resolve_llm_runtime_config
+from app.utils.simulation_schedule import normalize_active_hours
 
 load_runtime_env(_project_root, _backend_dir)
 
@@ -1016,8 +1017,14 @@ def get_active_agents_for_round(
     base_min = time_config.get("agents_per_hour_min", 5)
     base_max = time_config.get("agents_per_hour_max", 20)
     
-    peak_hours = time_config.get("peak_hours", [9, 10, 11, 14, 15, 20, 21, 22])
-    off_peak_hours = time_config.get("off_peak_hours", [0, 1, 2, 3, 4, 5])
+    peak_hours = normalize_active_hours(
+        time_config.get("peak_hours"),
+        default=[9, 10, 11, 14, 15, 20, 21, 22],
+    )
+    off_peak_hours = normalize_active_hours(
+        time_config.get("off_peak_hours"),
+        default=[0, 1, 2, 3, 4, 5],
+    )
     
     if current_hour in peak_hours:
         multiplier = time_config.get("peak_activity_multiplier", 1.5)
@@ -1031,7 +1038,10 @@ def get_active_agents_for_round(
     candidates = []
     for cfg in agent_configs:
         agent_id = cfg.get("agent_id", 0)
-        active_hours = cfg.get("active_hours", list(range(8, 23)))
+        active_hours = normalize_active_hours(
+            cfg.get("active_hours"),
+            default=list(range(8, 23)),
+        )
         activity_level = cfg.get("activity_level", 0.5)
         
         if current_hour not in active_hours:

@@ -6,7 +6,7 @@ Report API 라우터
 import os
 import traceback
 import threading
-from flask import request, jsonify, send_file
+from flask import after_this_request, request, jsonify, send_file
 
 from . import report_bp
 from ..config import Config
@@ -176,7 +176,12 @@ def generate_report():
                     task_manager.fail_task(task_id, report.error or "보고서 생성 실패")
                 
             except Exception as e:
-                logger.error(f"보고서 생성 실패: {str(e)}")
+                logger.exception(
+                    "보고서 생성 실패: simulation_id=%s, report_id=%s, task_id=%s",
+                    simulation_id,
+                    report_id,
+                    task_id,
+                )
                 task_manager.fail_task(task_id, str(e))
         
         # 백그라운드 스레드를 시작한다.
@@ -196,7 +201,7 @@ def generate_report():
         })
         
     except Exception as e:
-        logger.error(f"보고서 생성 작업 시작 실패: {str(e)}")
+        logger.exception("보고서 생성 작업 시작 실패")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -423,6 +428,14 @@ def download_report(report_id: str):
             with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
                 f.write(report.markdown_content)
                 temp_path = f.name
+
+            @after_this_request
+            def cleanup_temp_file(response):
+                try:
+                    os.unlink(temp_path)
+                except OSError as cleanup_error:
+                    logger.warning("임시 보고서 파일 정리 실패: %s", cleanup_error)
+                return response
             
             return send_file(
                 temp_path,
@@ -437,7 +450,7 @@ def download_report(report_id: str):
         )
         
     except Exception as e:
-        logger.error(f"보고서 다운로드 실패: {str(e)}")
+        logger.exception("보고서 다운로드 실패: report_id=%s", report_id)
         return jsonify({
             "success": False,
             "error": str(e),

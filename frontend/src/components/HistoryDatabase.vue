@@ -194,6 +194,7 @@
 import { ref, computed, onMounted, onUnmounted, onActivated, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { getSimulationHistory } from '../api/simulation'
+import { errorLog } from '../utils/logger'
 
 const router = useRouter()
 const route = useRoute()
@@ -443,7 +444,7 @@ const loadHistory = async () => {
       projects.value = response.data || []
     }
   } catch (error) {
-    console.error('기록 프로젝트 불러오기 실패:', error)
+    errorLog('기록 프로젝트 불러오기 실패:', error)
     projects.value = []
   } finally {
     loading.value = false

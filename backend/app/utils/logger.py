@@ -3,11 +3,12 @@
 콘솔과 파일에 동시에 출력하는 통합 로그 관리를 제공한다.
 """
 
+import logging
 import os
 import sys
-import logging
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
+from typing import Optional
 
 
 def _ensure_utf8_stdout():
@@ -27,7 +28,26 @@ def _ensure_utf8_stdout():
 LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'logs')
 
 
-def setup_logger(name: str = 'mirofish', level: int = logging.DEBUG) -> logging.Logger:
+def resolve_log_level(value: Optional[str], default: int = logging.INFO) -> int:
+    """
+    환경 변수나 문자열로부터 logging level을 안전하게 계산한다.
+    """
+    if value is None:
+        return default
+
+    if isinstance(value, int):
+        return value
+
+    if isinstance(value, str):
+        normalized = value.strip().upper()
+        if normalized.isdigit():
+            return int(normalized)
+        return getattr(logging, normalized, default)
+
+    return default
+
+
+def setup_logger(name: str = 'mirofish', level: Optional[int] = None) -> logging.Logger:
     """
     로거를 설정한다.
     
@@ -38,6 +58,12 @@ def setup_logger(name: str = 'mirofish', level: int = logging.DEBUG) -> logging.
     Returns:
         설정된 로거
     """
+    if level is None:
+        default_level = logging.DEBUG if os.environ.get("FLASK_DEBUG", "false").strip().lower() in {"1", "true", "yes", "on"} else logging.INFO
+        level = resolve_log_level(os.environ.get("MIROFISH_LOG_LEVEL"), default_level)
+
+    console_level = resolve_log_level(os.environ.get("MIROFISH_CONSOLE_LOG_LEVEL"), logging.INFO)
+
     # 로그 디렉터리가 존재하는지 확인한다.
     os.makedirs(LOG_DIR, exist_ok=True)
     
@@ -71,14 +97,14 @@ def setup_logger(name: str = 'mirofish', level: int = logging.DEBUG) -> logging.
         backupCount=5,
         encoding='utf-8'
     )
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(level)
     file_handler.setFormatter(detailed_formatter)
     
     # 2. 콘솔 핸들러 - 간단한 로그 (INFO 이상)
     # Windows에서 UTF-8 인코딩을 사용해 한글 깨짐을 방지한다.
     _ensure_utf8_stdout()
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(console_level)
     console_handler.setFormatter(simple_formatter)
     
     # 핸들러를 추가한다.

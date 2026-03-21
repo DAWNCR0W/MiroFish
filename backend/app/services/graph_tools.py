@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from ..config import Config
 from ..utils.llm_client import LLMClient
 from ..utils.logger import get_logger
+from .profile_localization import ProfileLocalizationService
 
 logger = get_logger("mirofish.graph_tools")
 
@@ -313,7 +314,8 @@ class GraphToolsService:
 
     def __init__(self, llm_client: Optional[LLMClient] = None):
         self._llm_client = llm_client
-        logger.info("그래프 도구 서비스 초기화 완료")
+        self.profile_localizer = ProfileLocalizationService()
+        logger.debug("그래프 도구 서비스 초기화 완료")
 
     @property
     def llm(self) -> LLMClient:
@@ -380,12 +382,12 @@ class GraphToolsService:
                     attributes=node.get("attributes", {}) or {},
                 )
             )
-        logger.info("노드 %s개를 가져왔습니다", len(nodes))
+        logger.debug("노드 %s개를 가져왔습니다", len(nodes))
         return nodes
 
     def get_all_edges(self, graph_id: str, include_temporal: bool = True) -> List[EdgeInfo]:
         data = self._load_graph_data(graph_id)
-        node_map = self._build_node_map(graph_id)
+        node_map = {node.get("uuid", ""): node for node in data.get("nodes", []) if node.get("uuid")}
         edges = []
         for edge in data.get("edges", []):
             source_uuid = edge.get("source_node_uuid", "")
@@ -409,7 +411,7 @@ class GraphToolsService:
                 item.invalid_at = edge.get("invalid_at")
                 item.expired_at = edge.get("expired_at")
             edges.append(item)
-        logger.info("엣지 %s개를 가져왔습니다", len(edges))
+        logger.debug("엣지 %s개를 가져왔습니다", len(edges))
         return edges
 
     def get_node_detail(self, graph_id: str, node_uuid: str) -> Optional[NodeInfo]:
@@ -426,7 +428,7 @@ class GraphToolsService:
         ]
 
     def search_graph(self, graph_id: str, query: str, limit: int = 10, scope: str = "edges") -> SearchResult:
-        logger.info("로컬 그래프 검색: graph_id=%s, query=%s, scope=%s", graph_id, query[:50], scope)
+        logger.debug("로컬 그래프 검색: graph_id=%s, query=%s, scope=%s", graph_id, query[:50], scope)
         keywords = self._tokenize(query)
         facts: List[str] = []
         edge_results: List[Dict[str, Any]] = []
@@ -798,7 +800,8 @@ class GraphToolsService:
 
         if os.path.exists(reddit_profile_path):
             with open(reddit_profile_path, "r", encoding="utf-8") as file:
-                return json.load(file)
+                profiles = json.load(file)
+            return self.profile_localizer.adapt_and_localize_profiles(profiles, platform="reddit")
 
         profiles: List[Dict[str, Any]] = []
         if os.path.exists(twitter_profile_path):
@@ -814,7 +817,7 @@ class GraphToolsService:
                             "profession": "미상",
                         }
                     )
-        return profiles
+        return self.profile_localizer.adapt_and_localize_profiles(profiles, platform="twitter")
 
     def _select_agents_for_interview(
         self,
@@ -896,4 +899,4 @@ class GraphToolsService:
             return summary
         except Exception as error:
             logger.warning("인터뷰 요약 생성에 실패해 대체 요약을 사용합니다: %s", error)
-            return f"총 {len(interviews)}명의 응답자를 인터뷰했습니다: " + "、".join([item.agent_name for item in interviews])
+            return f"총 {len(interviews)}명의 응답자를 인터뷰했습니다: " + ", ".join([item.agent_name for item in interviews])

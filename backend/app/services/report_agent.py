@@ -13,6 +13,7 @@ import os
 import json
 import time
 import re
+import threading
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -30,6 +31,16 @@ from .graph_tools import (
 )
 
 logger = get_logger('mirofish.report_agent')
+
+
+class _SameThreadOnlyFilter:
+    """보고서별 콘솔 로그가 생성 스레드 안에서만 기록되도록 제한한다."""
+
+    def __init__(self, thread_id: int):
+        self.thread_id = thread_id
+
+    def filter(self, record) -> bool:
+        return getattr(record, "thread", None) == self.thread_id
 
 
 class ReportLogger:
@@ -324,6 +335,7 @@ class ReportConsoleLogger:
         )
         self._ensure_log_file()
         self._file_handler = None
+        self._thread_filter = _SameThreadOnlyFilter(threading.get_ident())
         self._setup_file_handler()
     
     def _ensure_log_file(self):
@@ -349,6 +361,7 @@ class ReportConsoleLogger:
             datefmt='%H:%M:%S'
         )
         self._file_handler.setFormatter(formatter)
+        self._file_handler.addFilter(self._thread_filter)
         
         # report_agent 관련 logger에 추가합니다
         loggers_to_attach = [
@@ -974,7 +987,8 @@ class ReportAgent:
         Returns:
             도구 실행 결과(텍스트 형식)
         """
-        logger.info(f"도구를 실행합니다: {tool_name}, 파라미터: {parameters}")
+        parameter_keys = sorted(parameters.keys()) if isinstance(parameters, dict) else []
+        logger.info("도구를 실행합니다: %s, parameter_keys=%s", tool_name, parameter_keys)
         
         try:
             if tool_name == "insight_forge":
@@ -1067,11 +1081,72 @@ class ReportAgent:
                 return f"알 수 없는 도구: {tool_name}. 다음 도구 중 하나를 사용하세요: insight_forge, panorama_search, quick_search"
                 
         except Exception as e:
-            logger.error(f"도구 실행에 실패했습니다: {tool_name}, 오류: {str(e)}")
-            return f"도구 실행에 실패했습니다: {str(e)}"
+            logger.exception("도구 실행 실패: tool_name=%s", tool_name)
+            return f"도구 실행에 실패했습니다: {tool_name}"
     
     # 유효한 도구 이름 집합, raw JSON 예외 처리 시 검증용
     VALID_TOOL_NAMES = {"insight_forge", "panorama_search", "quick_search", "interview_agents"}
+
+    def _extract_balanced_json_objects(self, text: str, max_count: Optional[int] = None) -> List[str]:
+        """문자열 안에서 균형 잡힌 JSON 객체 문자열을 순서대로 추출합니다."""
+        objects: List[str] = []
+        start_index: Optional[int] = None
+        depth = 0
+        in_string = False
+        escape = False
+
+        for index, char in enumerate(text):
+            if start_index is None:
+                if char == "{":
+                    start_index = index
+                    depth = 1
+                    in_string = False
+                    escape = False
+                continue
+
+            if in_string:
+                if escape:
+                    escape = False
+                elif char == "\\":
+                    escape = True
+                elif char == '"':
+                    in_string = False
+                continue
+
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    objects.append(text[start_index:index + 1])
+                    if max_count and len(objects) >= max_count:
+                        break
+                    start_index = None
+
+        return objects
+
+    def _append_valid_tool_call(
+        self,
+        tool_calls: List[Dict[str, Any]],
+        seen_calls: set,
+        call_data: Any
+    ) -> None:
+        """유효한 도구 호출만 정규화해 중복 없이 목록에 추가합니다."""
+        if not isinstance(call_data, dict):
+            return
+
+        normalized = dict(call_data)
+        if not self._is_valid_tool_call(normalized):
+            return
+
+        signature = json.dumps(normalized, ensure_ascii=False, sort_keys=True)
+        if signature in seen_calls:
+            return
+
+        seen_calls.add(signature)
+        tool_calls.append(normalized)
 
     def _parse_tool_calls(self, response: str) -> List[Dict[str, Any]]:
         """
@@ -1081,16 +1156,39 @@ class ReportAgent:
         1. <tool_call>{"name": "tool_name", "parameters": {...}}</tool_call>
         2. raw JSON(응답 전체 또는 한 줄이 도구 호출 JSON인 경우)
         """
-        tool_calls = []
+        tool_calls: List[Dict[str, Any]] = []
+        seen_calls = set()
 
         # 형식 1: XML 스타일(표준 형식)
         xml_pattern = r'<tool_call>\s*(\{.*?\})\s*</tool_call>'
         for match in re.finditer(xml_pattern, response, re.DOTALL):
             try:
-                call_data = json.loads(match.group(1))
-                tool_calls.append(call_data)
+                self._append_valid_tool_call(
+                    tool_calls,
+                    seen_calls,
+                    json.loads(match.group(1))
+                )
             except json.JSONDecodeError:
                 pass
+
+        # 형식 1-보완: 닫는 태그가 빠졌거나 <tool_call>이 연속으로 나온 경우도 파싱합니다
+        open_tag_matches = list(re.finditer(r'<tool_call>', response))
+        for index, match in enumerate(open_tag_matches):
+            segment_start = match.end()
+            next_open = open_tag_matches[index + 1].start() if index + 1 < len(open_tag_matches) else len(response)
+            next_close = response.find('</tool_call>', segment_start)
+            segment_end = next_close if next_close != -1 and next_close < next_open else next_open
+
+            segment = response[segment_start:segment_end].strip()
+            for json_object in self._extract_balanced_json_objects(segment, max_count=1):
+                try:
+                    self._append_valid_tool_call(
+                        tool_calls,
+                        seen_calls,
+                        json.loads(json_object)
+                    )
+                except json.JSONDecodeError:
+                    continue
 
         if tool_calls:
             return tool_calls
@@ -1100,23 +1198,26 @@ class ReportAgent:
         stripped = response.strip()
         if stripped.startswith('{') and stripped.endswith('}'):
             try:
-                call_data = json.loads(stripped)
-                if self._is_valid_tool_call(call_data):
-                    tool_calls.append(call_data)
+                self._append_valid_tool_call(
+                    tool_calls,
+                    seen_calls,
+                    json.loads(stripped)
+                )
+                if tool_calls:
                     return tool_calls
             except json.JSONDecodeError:
                 pass
 
-        # 응답에 사고 텍스트 + raw JSON이 섞여 있을 수 있으므로 마지막 JSON 객체를 추출해 봅니다
-        json_pattern = r'(\{"(?:name|tool)"\s*:.*?\})\s*$'
-        match = re.search(json_pattern, stripped, re.DOTALL)
-        if match:
+        # 응답에 사고 텍스트 + raw JSON이 섞여 있을 수 있으므로 균형 잡힌 JSON 객체를 모두 훑어 봅니다
+        for json_object in self._extract_balanced_json_objects(stripped):
             try:
-                call_data = json.loads(match.group(1))
-                if self._is_valid_tool_call(call_data):
-                    tool_calls.append(call_data)
+                self._append_valid_tool_call(
+                    tool_calls,
+                    seen_calls,
+                    json.loads(json_object)
+                )
             except json.JSONDecodeError:
-                pass
+                continue
 
         return tool_calls
 
@@ -1807,7 +1908,7 @@ class ReportAgent:
                     completed_sections=completed_section_titles
                 )
             except Exception:
-                pass  # 저장 실패 오류는 무시합니다
+                logger.exception("보고서 실패 상태 저장 중 추가 오류 발생: report_id=%s", report_id)
             
             # 콘솔 로그 기록기를 닫습니다
             if self.console_logger:
@@ -1837,7 +1938,7 @@ class ReportAgent:
                 "sources": [정보 출처]
             }
         """
-        logger.info(f"Report Agent 대화: {message[:50]}...")
+        logger.info("Report Agent 대화 시작: message_length=%s", len(message or ""))
         
         chat_history = chat_history or []
         
@@ -2603,17 +2704,20 @@ class ReportManager:
 
         for item in os.listdir(cls.REPORTS_DIR):
             item_path = os.path.join(cls.REPORTS_DIR, item)
-            # 새 형식: 폴더
-            if os.path.isdir(item_path):
-                report = cls.get_report(item)
-                if report and report.simulation_id == simulation_id:
-                    matching_reports.append(report)
-            # 이전 형식 호환: JSON 파일
-            elif item.endswith('.json'):
-                report_id = item[:-5]
-                report = cls.get_report(report_id)
-                if report and report.simulation_id == simulation_id:
-                    matching_reports.append(report)
+            try:
+                # 새 형식: 폴더
+                if os.path.isdir(item_path):
+                    report = cls.get_report(item)
+                    if report and report.simulation_id == simulation_id:
+                        matching_reports.append(report)
+                # 이전 형식 호환: JSON 파일
+                elif item.endswith('.json'):
+                    report_id = item[:-5]
+                    report = cls.get_report(report_id)
+                    if report and report.simulation_id == simulation_id:
+                        matching_reports.append(report)
+            except Exception as e:
+                logger.warning("손상된 보고서 항목을 건너뜁니다: item=%s, error=%s", item, e)
 
         if not matching_reports:
             return None
@@ -2637,19 +2741,20 @@ class ReportManager:
         reports = []
         for item in os.listdir(cls.REPORTS_DIR):
             item_path = os.path.join(cls.REPORTS_DIR, item)
-            # 새 형식: 폴더
-            if os.path.isdir(item_path):
-                report = cls.get_report(item)
-                if report:
-                    if simulation_id is None or report.simulation_id == simulation_id:
+            try:
+                # 새 형식: 폴더
+                if os.path.isdir(item_path):
+                    report = cls.get_report(item)
+                    if report and (simulation_id is None or report.simulation_id == simulation_id):
                         reports.append(report)
-            # 이전 형식 호환: JSON 파일
-            elif item.endswith('.json'):
-                report_id = item[:-5]
-                report = cls.get_report(report_id)
-                if report:
-                    if simulation_id is None or report.simulation_id == simulation_id:
+                # 이전 형식 호환: JSON 파일
+                elif item.endswith('.json'):
+                    report_id = item[:-5]
+                    report = cls.get_report(report_id)
+                    if report and (simulation_id is None or report.simulation_id == simulation_id):
                         reports.append(report)
+            except Exception as e:
+                logger.warning("손상된 보고서 목록 항목을 건너뜁니다: item=%s, error=%s", item, e)
         
         # 생성 시간 내림차순으로 정렬합니다
         reports.sort(key=lambda r: r.created_at, reverse=True)

@@ -623,12 +623,20 @@ class LocalGraphStore:
             "removed_edges": removed_edges,
         }
 
-    def mark_episode_processed(self, graph_id: str, episode_id: str) -> None:
+    def mark_episode_processed(
+        self,
+        graph_id: str,
+        episode_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
         with self._lock_for(graph_id):
             graph = self._read_graph(graph_id)
             for episode in graph.get("episodes", []):
                 if episode.get("uuid") == episode_id:
                     episode["processed"] = True
+                    if metadata:
+                        episode.setdefault("metadata", {})
+                        episode["metadata"].update(metadata)
                     break
             self._write_graph(graph_id, graph)
 

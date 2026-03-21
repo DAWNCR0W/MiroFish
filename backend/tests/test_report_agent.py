@@ -31,8 +31,8 @@ class DummyGraphTools:
                 },
             },
             "entities": [
-                {"name": "武汉大学", "type": "Organization", "summary": "브랜드 평판 위기를 겪는 대학"},
-                {"name": "辛某", "type": "Person", "summary": "사건의 핵심 당사자"},
+                {"name": "\u6b66\u6c49\u5927\u5b66", "type": "Organization", "summary": "브랜드 평판 위기를 겪는 대학"},
+                {"name": "\u8f9b\u67d0", "type": "Person", "summary": "사건의 핵심 당사자"},
             ],
             "total_entities": 11,
         }
@@ -102,3 +102,54 @@ def test_report_manager_prefers_renderable_completed_report(tmp_path, monkeypatc
 
     assert selected is not None
     assert selected.report_id == "report_valid"
+
+
+def test_parse_tool_calls_accepts_unclosed_repeated_tool_call_tags():
+    agent = ReportAgent(
+        graph_id="graph_test",
+        simulation_id="sim_test",
+        simulation_requirement="테스트 요구사항",
+        llm_client=DummyOutlineLLM({}),
+        graph_tools=DummyGraphTools(),
+    )
+
+    response = """
+<tool_call>
+{"name": "insight_forge", "parameters": {"query": "first query"}}
+<tool_call>
+{"name": "panorama_search", "parameters": {"query": "second query", "include_expired": true}}
+<tool_call>
+{"name": "interview_agents", "parameters": {"interview_topic": "third query", "max_agents": 5}}
+""".strip()
+
+    tool_calls = agent._parse_tool_calls(response)
+
+    assert [call["name"] for call in tool_calls] == [
+        "insight_forge",
+        "panorama_search",
+        "interview_agents",
+    ]
+    assert tool_calls[1]["parameters"]["include_expired"] is True
+    assert tool_calls[2]["parameters"]["max_agents"] == 5
+
+
+def test_parse_tool_calls_finds_raw_json_inside_mixed_response_text():
+    agent = ReportAgent(
+        graph_id="graph_test",
+        simulation_id="sim_test",
+        simulation_requirement="테스트 요구사항",
+        llm_client=DummyOutlineLLM({}),
+        graph_tools=DummyGraphTools(),
+    )
+
+    response = """
+Thought: 우선 빠르게 사실을 확인합니다.
+{"tool": "quick_search", "params": {"query": "capital flow", "limit": 5}}
+""".strip()
+
+    tool_calls = agent._parse_tool_calls(response)
+
+    assert tool_calls == [{
+        "name": "quick_search",
+        "parameters": {"query": "capital flow", "limit": 5},
+    }]

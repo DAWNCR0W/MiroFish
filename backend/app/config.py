@@ -21,8 +21,8 @@ class Config:
     """Flask 설정 클래스"""
     
     # Flask 설정
-    SECRET_KEY = os.environ.get('SECRET_KEY', 'mirofish-secret-key')
-    DEBUG = os.environ.get('FLASK_DEBUG', 'True').lower() == 'true'
+    SECRET_KEY = os.environ.get('SECRET_KEY') or os.urandom(32).hex()
+    DEBUG = os.environ.get('FLASK_DEBUG', 'false').lower() in {'1', 'true', 'yes', 'on'}
     
     # JSON 설정 - ASCII 이스케이프를 비활성화하여 한글이 그대로 표시되도록 한다.
     JSON_AS_ASCII = False

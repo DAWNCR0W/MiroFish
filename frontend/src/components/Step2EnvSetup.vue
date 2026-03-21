@@ -640,6 +640,7 @@ import {
   getSimulationProfilesRealtime,
   getSimulationConfigRealtime
 } from '../api/simulation'
+import { warnLog } from '../utils/logger'
 
 const props = defineProps({
   simulationId: String,  // 부모 컴포넌트에서 전달됩니다
@@ -961,7 +962,7 @@ const pollPrepareStatus = async () => {
     }
   } catch (err) {
     pollFailureCount += 1
-    console.warn('폴링 상태 확인 실패:', err)
+    warnLog('폴링 상태 확인 실패:', err)
     if (pollFailureCount === 3) {
       addLog(`준비 상태를 연속으로 불러오지 못했습니다: ${err.message}`)
     }
@@ -1008,7 +1009,7 @@ const fetchProfilesRealtime = async () => {
       }
     }
   } catch (err) {
-    console.warn('프로필 조회 실패:', err)
+    warnLog('프로필 조회 실패:', err)
   }
 }
 
@@ -1076,7 +1077,7 @@ const fetchConfigRealtime = async () => {
       }
     }
   } catch (err) {
-    console.warn('설정 조회 실패:', err)
+    warnLog('설정 조회 실패:', err)
   }
 }
 
@@ -1164,7 +1165,7 @@ onMounted(() => {
         }
       }
     } catch (err) {
-      console.warn('시뮬레이션 상태 확인 실패:', err)
+      warnLog('시뮬레이션 상태 확인 실패:', err)
     }
 
     await startPrepareSimulation()
@@ -1186,7 +1187,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   background: #FAFAFA;
-  font-family: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
+  font-family: 'Space Grotesk', 'Noto Sans KR', system-ui, sans-serif;
 }
 
 .scroll-container {
@@ -2264,7 +2265,7 @@ onUnmounted(() => {
 }
 
 .narrative-text {
-  font-family: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+  font-family: 'Inter', 'Noto Sans KR', system-ui, sans-serif;
   font-size: 14px;
   color: #334155;
   line-height: 1.8;

@@ -70,6 +70,7 @@ import GraphPanel from '../components/GraphPanel.vue'
 import Step2EnvSetup from '../components/Step2EnvSetup.vue'
 import { getProject, getGraphData } from '../api/graph'
 import { getSimulation, stopSimulation, getEnvStatus, closeSimulationEnv } from '../api/simulation'
+import { warnLog } from '../utils/logger'
 
 const route = useRoute()
 const router = useRouter()
@@ -214,8 +215,9 @@ const checkAndStopRunningSimulation = async () => {
       }
     }
   } catch (err) {
-    // 환경 상태 확인 실패는 이후 흐름에 영향을 주지 않습니다
-    console.warn('시뮬레이션 상태 확인 실패:', err)
+    currentStatus.value = 'error'
+    addLog(`시뮬레이션 상태 확인 실패: ${err.message}`)
+    warnLog('시뮬레이션 상태 확인 실패:', err)
   }
 }
 
@@ -228,9 +230,11 @@ const forceStopSimulation = async () => {
     if (stopRes.success) {
       addLog('✓ 시뮬레이션을 강제 중지했습니다')
     } else {
+      currentStatus.value = 'error'
       addLog(`강제 시뮬레이션 중지 실패: ${stopRes.error || '알 수 없는 오류'}`)
     }
   } catch (err) {
+    currentStatus.value = 'error'
     addLog(`강제 중지 중 예외 발생: ${err.message}`)
   }
 }
@@ -249,18 +253,24 @@ const loadSimulationData = async () => {
         const projRes = await getProject(simData.project_id)
         if (projRes.success && projRes.data) {
           projectData.value = projRes.data
+          currentStatus.value = 'processing'
           addLog(`프로젝트 로드 성공: ${projRes.data.project_id}`)
           
           // 그래프 데이터를 가져옵니다
           if (projRes.data.graph_id) {
             await loadGraph(projRes.data.graph_id)
           }
+        } else {
+          currentStatus.value = 'error'
+          addLog(`프로젝트 로드 실패: ${projRes.error || '알 수 없는 오류'}`)
         }
       }
     } else {
+      currentStatus.value = 'error'
       addLog(`시뮬레이션 데이터 로드 실패: ${simRes.error || '알 수 없는 오류'}`)
     }
   } catch (err) {
+    currentStatus.value = 'error'
     addLog(`불러오는 중 예외가 발생했습니다: ${err.message}`)
   }
 }
@@ -271,9 +281,14 @@ const loadGraph = async (graphId) => {
     const res = await getGraphData(graphId)
     if (res.success) {
       graphData.value = res.data
+      currentStatus.value = 'processing'
       addLog('그래프 데이터 로드 완료')
+    } else {
+      currentStatus.value = 'error'
+      addLog(`그래프 로드 실패: ${res.error || '알 수 없는 오류'}`)
     }
   } catch (err) {
+    currentStatus.value = 'error'
     addLog(`그래프 로드 실패: ${err.message}`)
   } finally {
     graphLoading.value = false
@@ -304,7 +319,7 @@ onMounted(async () => {
   flex-direction: column;
   background: #FFF;
   overflow: hidden;
-  font-family: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
+  font-family: 'Space Grotesk', 'Noto Sans KR', system-ui, sans-serif;
 }
 
 /* Header */

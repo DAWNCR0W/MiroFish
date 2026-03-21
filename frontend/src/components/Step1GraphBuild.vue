@@ -190,6 +190,7 @@
 import { computed, ref, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { createSimulation } from '../api/simulation'
+import { errorLog } from '../utils/logger'
 
 const router = useRouter()
 
@@ -211,7 +212,8 @@ const creatingSimulation = ref(false)
 // 환경 설정으로 이동합니다 - simulation을 생성하고 전환합니다
 const handleEnterEnvSetup = async () => {
   if (!props.projectData?.project_id || !props.projectData?.graph_id) {
-    console.error('프로젝트 또는 그래프 정보가 없습니다')
+    errorLog('프로젝트 또는 그래프 정보가 없습니다')
+    alert('프로젝트 또는 그래프 정보가 없습니다')
     return
   }
   
@@ -232,11 +234,11 @@ const handleEnterEnvSetup = async () => {
         params: { simulationId: res.data.simulation_id }
       })
     } else {
-      console.error('시뮬레이션 생성 실패:', res.error)
+      errorLog('시뮬레이션 생성 실패:', res.error)
       alert('시뮬레이션 생성 실패: ' + (res.error || '알 수 없는 오류'))
     }
   } catch (err) {
-    console.error('시뮬레이션 생성 중 예외 발생:', err)
+    errorLog('시뮬레이션 생성 중 예외 발생:', err)
     alert('시뮬레이션 생성 중 예외 발생: ' + err.message)
   } finally {
     creatingSimulation.value = false

@@ -28,7 +28,7 @@ def test_find_node_by_name_matches_alias(monkeypatch, tmp_path):
                 {
                     "name": "Wuhan University",
                     "type": "Organization",
-                    "aliases": ["武汉大学", "우한대학교"],
+                    "aliases": ["\u6b66\u6c49\u5927\u5b66", "우한대학교"],
                     "summary": "중국 우한의 주요 대학",
                     "attributes": {},
                 }
@@ -42,7 +42,7 @@ def test_find_node_by_name_matches_alias(monkeypatch, tmp_path):
 
     assert matched is not None
     assert matched["name"] == "Wuhan University"
-    assert set(matched.get("aliases", [])) == {"武汉大学", "우한대학교"}
+    assert set(matched.get("aliases", [])) == {"\u6b66\u6c49\u5927\u5b66", "우한대학교"}
 
 
 def test_apply_extraction_merges_multilingual_alias_entities(monkeypatch, tmp_path):
@@ -57,7 +57,7 @@ def test_apply_extraction_merges_multilingual_alias_entities(monkeypatch, tmp_pa
                 {
                     "name": "Wuhan University",
                     "type": "Organization",
-                    "aliases": ["武汉大学"],
+                    "aliases": ["\u6b66\u6c49\u5927\u5b66"],
                     "summary": "중국 우한의 주요 대학",
                     "attributes": {},
                 }
@@ -90,7 +90,7 @@ def test_apply_extraction_merges_multilingual_alias_entities(monkeypatch, tmp_pa
 
     assert len(graph["nodes"]) == 1
     assert graph["nodes"][0]["name"] == "Wuhan University"
-    assert set(graph["nodes"][0].get("aliases", [])) == {"武汉大学", "우한대학교"}
+    assert set(graph["nodes"][0].get("aliases", [])) == {"\u6b66\u6c49\u5927\u5b66", "우한대학교"}
 
 
 def test_merge_nodes_redirects_edges_and_preserves_aliases(monkeypatch, tmp_path):

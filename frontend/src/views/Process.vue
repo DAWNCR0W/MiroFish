@@ -417,6 +417,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
 import { getPendingUpload, clearPendingUpload } from '../store/pendingUpload'
 import * as d3 from 'd3'
+import { debugLog, errorLog } from '../utils/logger'
 
 const route = useRoute()
 const router = useRouter()
@@ -503,7 +504,7 @@ const formatDate = (dateStr) => {
   if (!dateStr) return '-'
   try {
     const date = new Date(dateStr)
-    return date.toLocaleString('zh-CN', {
+    return date.toLocaleString('ko-KR', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -611,7 +612,7 @@ const handleNewProject = async () => {
       error.value = response.error || '온톨로지 생성 실패'
     }
   } catch (err) {
-    console.error('새 프로젝트 처리 오류:', err)
+    errorLog('새 프로젝트 처리 오류:', err)
     error.value = '프로젝트 초기화 실패: ' + (err.message || '알 수 없는 오류')
   } finally {
     loading.value = false
@@ -648,7 +649,7 @@ const loadProject = async () => {
       error.value = response.error || '프로젝트 로드 실패'
     }
   } catch (err) {
-    console.error('프로젝트 로드 오류:', err)
+    errorLog('프로젝트 로드 오류:', err)
     error.value = '프로젝트 로드 실패: ' + (err.message || '알 수 없는 오류')
   } finally {
     loading.value = false
@@ -701,7 +702,7 @@ const startBuildGraph = async () => {
       buildProgress.value = null
     }
   } catch (err) {
-    console.error('그래프 구축 오류:', err)
+    errorLog('그래프 구축 오류:', err)
     error.value = '그래프 구축 시작 실패: ' + (err.message || '알 수 없는 오류')
     buildProgress.value = null
   }
@@ -712,6 +713,7 @@ let graphPollTimer = null
 
 // 그래프 데이터 폴링 시작
 const startGraphPolling = () => {
+  stopGraphPolling()
   // 한 번 즉시 가져옵니다
   fetchGraphData()
   
@@ -754,27 +756,32 @@ const fetchGraphData = async () => {
         const newNodeCount = newData.node_count || newData.nodes?.length || 0
         const oldNodeCount = graphData.value?.node_count || graphData.value?.nodes?.length || 0
         
-        console.log('그래프 데이터를 가져오는 중, 노드:', newNodeCount, '간선:', newData.edge_count || newData.edges?.length || 0)
+        debugLog('그래프 데이터를 가져오는 중, 노드:', newNodeCount, '간선:', newData.edge_count || newData.edges?.length || 0)
         
         // 데이터가 바뀌면 렌더링을 갱신합니다
         if (newNodeCount !== oldNodeCount || !graphData.value) {
           graphData.value = newData
-          await nextTick()
-          renderGraph()
         }
       }
     }
   } catch (err) {
-    console.log('그래프 데이터 가져오기:', err.message || '아직 준비되지 않음')
+    const status = err?.status || err?.response?.status
+    if (status && status >= 500) {
+      stopGraphPolling()
+      error.value = err.message || '그래프 데이터를 자동 새로고침하지 못했습니다.'
+    } else {
+      debugLog('그래프 데이터 가져오기:', err.message || '아직 준비되지 않음')
+    }
   }
 }
 
 // 작업 상태 폴링
 const startPollingTask = (taskId) => {
-    // 한 번 즉시 조회합니다
+  stopPolling()
+  // 한 번 즉시 조회합니다
   pollTaskStatus(taskId)
   
-    // 이후 주기적으로 폴링합니다
+  // 이후 주기적으로 폴링합니다
   pollTimer = setInterval(() => {
     pollTaskStatus(taskId)
   }, 2000)
@@ -794,10 +801,10 @@ const pollTaskStatus = async (taskId) => {
       message: task.message || '처리 중...'
       }
       
-      console.log('작업 상태:', task.status, '진행률:', task.progress)
+      debugLog('작업 상태:', task.status, '진행률:', task.progress)
       
       if (task.status === 'completed') {
-        console.log('✅ 그래프 구축이 완료되어 전체 데이터를 불러오는 중입니다...')
+        debugLog('그래프 구축이 완료되어 전체 데이터를 불러오는 중입니다...')
         
         stopPolling()
         stopGraphPolling()
@@ -816,9 +823,9 @@ const pollTaskStatus = async (taskId) => {
           
           // 최종적으로 완전한 그래프 데이터를 불러옵니다
           if (projectResponse.data.graph_id) {
-            console.log('📊 전체 그래프 불러오기:', projectResponse.data.graph_id)
+            debugLog('전체 그래프 불러오기:', projectResponse.data.graph_id)
             await loadGraph(projectResponse.data.graph_id)
-            console.log('✅ 그래프 불러오기가 완료되었습니다')
+            debugLog('그래프 불러오기가 완료되었습니다')
           }
         }
         
@@ -832,7 +839,7 @@ const pollTaskStatus = async (taskId) => {
       }
     }
   } catch (err) {
-    console.error('작업 폴링 오류:', err)
+    errorLog('작업 폴링 오류:', err)
   }
 }
 
@@ -851,11 +858,10 @@ const loadGraph = async (graphId) => {
     
     if (response.success) {
       graphData.value = response.data
-      await nextTick()
-      renderGraph()
     }
   } catch (err) {
-    console.error('그래프 로드 오류:', err)
+    errorLog('그래프 로드 오류:', err)
+    error.value = err.message || '그래프를 불러오지 못했습니다.'
   } finally {
     graphLoading.value = false
   }
@@ -864,13 +870,13 @@ const loadGraph = async (graphId) => {
 // 그래프 렌더링(D3.js)
 const renderGraph = () => {
   if (!graphSvg.value || !graphData.value) {
-    console.log('렌더링할 수 없습니다: SVG 또는 데이터가 없습니다')
+    debugLog('렌더링할 수 없습니다: SVG 또는 데이터가 없습니다')
     return
   }
   
   const container = graphContainer.value
   if (!container) {
-    console.log('렌더링할 수 없습니다: 컨테이너가 없습니다')
+    debugLog('렌더링할 수 없습니다: 컨테이너가 없습니다')
     return
   }
   
@@ -880,11 +886,11 @@ const renderGraph = () => {
   const height = (rect.height || 600) - 60
   
   if (width <= 0 || height <= 0) {
-    console.log('렌더링할 수 없습니다: 유효하지 않은 크기', width, height)
+    debugLog('렌더링할 수 없습니다: 유효하지 않은 크기', width, height)
     return
   }
   
-  console.log('그래프 렌더링:', width, 'x', height)
+  debugLog('그래프 렌더링:', width, 'x', height)
   
   const svg = d3.select(graphSvg.value)
     .attr('width', width)
@@ -898,7 +904,7 @@ const renderGraph = () => {
   const edgesData = graphData.value.edges || []
   
   if (nodesData.length === 0) {
-    console.log('렌더링할 노드가 없습니다')
+    debugLog('렌더링할 노드가 없습니다')
     // 빈 상태를 표시합니다
     svg.append('text')
       .attr('x', width / 2)
@@ -938,7 +944,7 @@ const renderGraph = () => {
       }
     }))
   
-  console.log('노드:', nodes.length, '간선:', edges.length)
+  debugLog('노드:', nodes.length, '간선:', edges.length)
   
   // 색상 매핑
   const types = [...new Set(nodes.map(n => n.type))]
@@ -1104,7 +1110,7 @@ onUnmounted(() => {
 .process-page {
   min-height: 100vh;
   background: var(--white);
-  font-family: 'JetBrains Mono', 'Noto Sans SC', monospace;
+  font-family: 'JetBrains Mono', 'Noto Sans KR', monospace;
   overflow: hidden; /* Prevent body scroll in fullscreen */
 }
 

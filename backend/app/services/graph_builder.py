@@ -7,16 +7,19 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 from ..config import Config
 from ..models.task import TaskManager, TaskStatus
 from ..utils.llm_client import LLMClient
+from ..utils.logger import get_logger
 from .graph_entity_deduper import GraphEntityDeduper
 from .local_graph_extractor import LocalGraphExtractor
 from .local_graph_store import LocalGraphStore
 from .text_processor import TextProcessor
+
+logger = get_logger("mirofish.graph_builder")
 
 
 @dataclass
@@ -37,6 +40,28 @@ class GraphInfo:
         }
 
 
+@dataclass
+class BatchProcessingReport:
+    """최근 배치 처리 결과 요약"""
+
+    total_chunks: int = 0
+    succeeded_chunks: int = 0
+    episode_uuids: List[str] = field(default_factory=list)
+    failed_chunks: List[Dict[str, str]] = field(default_factory=list)
+
+    @property
+    def failed_chunk_count(self) -> int:
+        return len(self.failed_chunks)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "total_chunks": self.total_chunks,
+            "succeeded_chunks": self.succeeded_chunks,
+            "failed_chunk_count": self.failed_chunk_count,
+            "failed_chunks": list(self.failed_chunks),
+        }
+
+
 class GraphBuilderService:
     """
     그래프 구축 서비스
@@ -50,6 +75,7 @@ class GraphBuilderService:
         self.store = LocalGraphStore()
         self.extractor = LocalGraphExtractor()
         self._extractor_local = threading.local()
+        self._last_batch_report = BatchProcessingReport()
 
     def build_graph_async(
         self,
@@ -122,6 +148,7 @@ class GraphBuilderService:
                 ),
                 parallel_workers=parallel_workers,
             )
+            batch_report = self.get_last_batch_report()
 
             self.task_manager.update_task(
                 task_id,
@@ -147,12 +174,13 @@ class GraphBuilderService:
                     "graph_id": graph_id,
                     "graph_info": graph_info.to_dict(),
                     "chunks_processed": total_chunks,
+                    "succeeded_chunks": batch_report["succeeded_chunks"],
+                    "failed_chunk_count": batch_report["failed_chunk_count"],
                 },
             )
         except Exception as e:
-            import traceback
-
-            self.task_manager.fail_task(task_id, f"그래프 구축 실패: {e}\n{traceback.format_exc()}")
+            logger.exception("그래프 구축 워커 실패: task_id=%s", task_id)
+            self.task_manager.fail_task(task_id, f"그래프 구축 실패: {e}")
 
     def create_graph(self, name: str) -> str:
         graph_id = f"mirofish_{uuid.uuid4().hex[:16]}"
@@ -241,9 +269,9 @@ class GraphBuilderService:
         wave_chunks: List[str],
         ontology: Dict[str, Any],
         parallel_workers: int,
-    ) -> List[str]:
+    ) -> BatchProcessingReport:
         if not wave_chunks:
-            return []
+            return BatchProcessingReport()
 
         wave_known_entities = self._snapshot_known_entities(graph_id)
         wave_records: List[Dict[str, Any]] = []
@@ -257,11 +285,14 @@ class GraphBuilderService:
 
         if len(wave_records) == 1 or parallel_workers <= 1:
             for record in wave_records:
-                record["extraction"] = self._extract_chunk(
-                    record["chunk"],
-                    ontology,
-                    wave_known_entities,
-                )
+                try:
+                    record["extraction"] = self._extract_chunk(
+                        record["chunk"],
+                        ontology,
+                        wave_known_entities,
+                    )
+                except Exception as exc:
+                    record["error"] = exc
         else:
             with ThreadPoolExecutor(max_workers=min(parallel_workers, len(wave_records))) as executor:
                 future_to_index = {
@@ -276,19 +307,52 @@ class GraphBuilderService:
 
                 for future in as_completed(future_to_index):
                     index = future_to_index[future]
-                    wave_records[index]["extraction"] = future.result()
+                    try:
+                        wave_records[index]["extraction"] = future.result()
+                    except Exception as exc:
+                        wave_records[index]["error"] = exc
 
-        episode_uuids: List[str] = []
+        report = BatchProcessingReport(total_chunks=len(wave_records))
         for record in wave_records:
+            episode_id = record["episode"]["uuid"]
+            report.episode_uuids.append(episode_id)
+            error = record.get("error")
+            if error is not None:
+                error_text = str(error) or error.__class__.__name__
+                chunk_preview = record["chunk"].replace("\n", " ").strip()[:120]
+                logger.warning(
+                    "청크 추출 실패 후 해당 청크를 건너뜁니다: graph_id=%s, episode_id=%s, error=%s, chunk_preview=%s",
+                    graph_id,
+                    episode_id,
+                    error_text,
+                    chunk_preview,
+                )
+                self.store.mark_episode_processed(
+                    graph_id,
+                    episode_id,
+                    metadata={
+                        "extraction_failed": True,
+                        "error": error_text,
+                    },
+                )
+                report.failed_chunks.append(
+                    {
+                        "episode_id": episode_id,
+                        "error": error_text,
+                        "chunk_preview": chunk_preview,
+                    }
+                )
+                continue
+
             self.store.apply_extraction(
                 graph_id=graph_id,
-                episode_id=record["episode"]["uuid"],
+                episode_id=episode_id,
                 extraction=record["extraction"],
                 created_at=record["episode"]["created_at"],
             )
-            episode_uuids.append(record["episode"]["uuid"])
+            report.succeeded_chunks += 1
 
-        return episode_uuids
+        return report
 
     def add_text_batches(
         self,
@@ -302,6 +366,8 @@ class GraphBuilderService:
         total_chunks = len(chunks)
         ontology = self.store.get_ontology(graph_id)
         completed_chunks = 0
+        failed_chunks: List[Dict[str, str]] = []
+        succeeded_chunks = 0
         effective_workers = self._resolve_parallel_workers(
             total_items=total_chunks,
             batch_size=batch_size,
@@ -320,22 +386,46 @@ class GraphBuilderService:
                     progress,
                 )
 
-            batch_episode_uuids = self._process_batch_wave(
+            batch_report = self._process_batch_wave(
                 graph_id=graph_id,
                 wave_chunks=batch_chunks,
                 ontology=ontology,
                 parallel_workers=effective_workers,
             )
-            episode_uuids.extend(batch_episode_uuids)
+            episode_uuids.extend(batch_report.episode_uuids)
             completed_chunks += len(batch_chunks)
+            succeeded_chunks += batch_report.succeeded_chunks
+            failed_chunks.extend(batch_report.failed_chunks)
 
             if progress_callback:
+                failure_suffix = f", 실패 {len(failed_chunks)}개 건너뜀" if failed_chunks else ""
                 progress_callback(
-                    f"{batch_num}/{total_batches}번째 배치 처리 완료 ({completed_chunks}/{total_chunks}개 청크)...",
+                    f"{batch_num}/{total_batches}번째 배치 처리 완료 ({completed_chunks}/{total_chunks}개 청크{failure_suffix})...",
                     completed_chunks / total_chunks if total_chunks else 1.0,
                 )
 
+        self._last_batch_report = BatchProcessingReport(
+            total_chunks=total_chunks,
+            succeeded_chunks=succeeded_chunks,
+            failed_chunks=failed_chunks,
+        )
+
+        if total_chunks and succeeded_chunks == 0:
+            first_error = failed_chunks[0]["error"] if failed_chunks else "알 수 없는 오류"
+            raise RuntimeError(f"모든 텍스트 청크 추출에 실패했습니다: {first_error}")
+
+        if failed_chunks:
+            logger.warning(
+                "그래프 배치 처리 중 일부 청크 추출 실패: graph_id=%s, succeeded=%s, failed=%s",
+                graph_id,
+                succeeded_chunks,
+                len(failed_chunks),
+            )
+
         return episode_uuids
+
+    def get_last_batch_report(self) -> Dict[str, Any]:
+        return self._last_batch_report.to_dict()
 
     def _wait_for_episodes(
         self,

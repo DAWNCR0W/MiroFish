@@ -179,7 +179,7 @@ docker compose up -d
 ## 📬 더 많은 소통
 
 <div align="center">
-<img src="./static/image/qq-group.png" alt="QQ 그룹" width="60%"/>
+<img src="./static/image/qq-group.png" alt="커뮤니티 안내" width="60%"/>
 </div>
 
 &nbsp;

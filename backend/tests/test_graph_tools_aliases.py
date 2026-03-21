@@ -26,7 +26,7 @@ def test_get_entity_summary_matches_alias(monkeypatch, tmp_path):
                 {
                     "uuid": "node-1",
                     "name": "Wuhan University",
-                    "aliases": ["우한대학교", "武汉大学"],
+                    "aliases": ["우한대학교", "\u6b66\u6c49\u5927\u5b66"],
                     "labels": ["Entity", "Organization"],
                     "summary": "중국 우한의 주요 대학",
                     "attributes": {},
@@ -41,7 +41,7 @@ def test_get_entity_summary_matches_alias(monkeypatch, tmp_path):
 
     assert result["entity_info"] is not None
     assert result["entity_info"]["name"] == "Wuhan University"
-    assert set(result["entity_info"]["aliases"]) == {"우한대학교", "武汉大学"}
+    assert set(result["entity_info"]["aliases"]) == {"우한대학교", "\u6b66\u6c49\u5927\u5b66"}
 
 
 def test_insight_forge_handles_edges_with_missing_node_records(monkeypatch, tmp_path):

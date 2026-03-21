@@ -22,6 +22,14 @@ from ..utils.logger import get_logger
 logger = get_logger('mirofish.simulation_ipc')
 
 
+def _atomic_write_json(file_path: str, payload: Dict[str, Any]) -> None:
+    """부분적으로 기록된 JSON 파일을 다른 프로세스가 읽지 않도록 원자적으로 저장한다."""
+    temp_path = f"{file_path}.tmp"
+    with open(temp_path, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    os.replace(temp_path, file_path)
+
+
 class CommandType(str, Enum):
     """명령 유형"""
     INTERVIEW = "interview"           # 단일 에이전트 인터뷰
@@ -145,8 +153,7 @@ class SimulationIPCClient:
         
         # 명령 파일을 기록합니다.
         command_file = os.path.join(self.commands_dir, f"{command_id}.json")
-        with open(command_file, 'w', encoding='utf-8') as f:
-            json.dump(command.to_dict(), f, ensure_ascii=False, indent=2)
+        _atomic_write_json(command_file, command.to_dict())
         
         logger.info("IPC 명령 전송: %s, command_id=%s", command_type.value, command_id)
         
@@ -171,7 +178,7 @@ class SimulationIPCClient:
                     logger.info("IPC 응답 수신: command_id=%s, status=%s", command_id, response.status.value)
                     return response
                 except (json.JSONDecodeError, KeyError) as e:
-                    logger.warning("응답 파싱에 실패했습니다: %s", e)
+                    logger.debug("응답 파일이 아직 완전히 기록되지 않았습니다: %s", e)
             
             time.sleep(poll_interval)
         
@@ -181,6 +188,10 @@ class SimulationIPCClient:
         # 명령 파일을 정리합니다.
         try:
             os.remove(command_file)
+        except OSError:
+            pass
+        try:
+            os.remove(response_file)
         except OSError:
             pass
         
@@ -323,11 +334,10 @@ class SimulationIPCServer:
     def _update_env_status(self, status: str):
         """환경 상태 파일을 갱신합니다."""
         status_file = os.path.join(self.simulation_dir, "env_status.json")
-        with open(status_file, 'w', encoding='utf-8') as f:
-            json.dump({
-                "status": status,
-                "timestamp": datetime.now().isoformat()
-            }, f, ensure_ascii=False, indent=2)
+        _atomic_write_json(status_file, {
+            "status": status,
+            "timestamp": datetime.now().isoformat()
+        })
     
     def poll_commands(self) -> Optional[IPCCommand]:
         """
@@ -367,8 +377,7 @@ class SimulationIPCServer:
             response: IPC 응답
         """
         response_file = os.path.join(self.responses_dir, f"{response.command_id}.json")
-        with open(response_file, 'w', encoding='utf-8') as f:
-            json.dump(response.to_dict(), f, ensure_ascii=False, indent=2)
+        _atomic_write_json(response_file, response.to_dict())
         
         # 명령 파일을 삭제합니다.
         command_file = os.path.join(self.commands_dir, f"{response.command_id}.json")

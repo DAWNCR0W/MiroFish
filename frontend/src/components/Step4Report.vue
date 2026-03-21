@@ -404,6 +404,7 @@
 import { ref, computed, watch, onUnmounted, nextTick, h, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { getAgentLog, getConsoleLog, getReport, getReportSections } from '../api/report'
+import { warnLog } from '../utils/logger'
 
 const router = useRouter()
 
@@ -515,7 +516,7 @@ const loadPersistedReportState = async () => {
       }
     }
   } catch (err) {
-    console.warn('저장된 보고서 데이터를 불러오지 못했습니다:', err)
+    warnLog('저장된 보고서 데이터를 불러오지 못했습니다:', err)
   }
 }
 
@@ -628,6 +629,14 @@ const getToolIcon = (toolName) => {
   return toolConfig[toolName]?.icon || 'tool'
 }
 
+const matchAny = (text, patterns) => {
+  for (const pattern of patterns) {
+    const match = text.match(pattern)
+    if (match) return match
+  }
+  return null
+}
+
 // 파싱 함수
 const parseInsightForge = (text) => {
   const result = {
@@ -642,30 +651,53 @@ const parseInsightForge = (text) => {
 
   try {
     // 분석 질문을 추출합니다
-    const queryMatch = text.match(/分析问题:\s*(.+?)(?:\n|$)/)
+    const queryMatch = matchAny(text, [
+      /분석 질문:\s*(.+?)(?:\n|$)/,
+      /\u5206\u6790\u95ee\u9898:\s*(.+?)(?:\n|$)/
+    ])
     if (queryMatch) result.query = queryMatch[1].trim()
 
     // 예측 시나리오를 추출합니다
-    const reqMatch = text.match(/예측 시나리오: \s*(.+?)(?:\n|$)/)
+    const reqMatch = matchAny(text, [
+      /예측 시나리오:\s*(.+?)(?:\n|$)/,
+      /\u9884\u6d4b\u573a\u666f:\s*(.+?)(?:\n|$)/
+    ])
     if (reqMatch) result.simulationRequirement = reqMatch[1].trim()
 
     // 통계 데이터를 추출합니다 - "관련 예측 사실: X개" 형식과 매칭합니다
-    const factMatch = text.match(/相关预测事实:\s*(\d+)/)
-    const entityMatch = text.match(/관련 엔티티:\s*(\d+)/)
-    const relMatch = text.match(/관계망:\s*(\d+)/)
+    const factMatch = matchAny(text, [
+      /관련 예측 사실:\s*(\d+)/,
+      /\u76f8\u5173\u9884\u6d4b\u4e8b\u5b9e:\s*(\d+)/
+    ])
+    const entityMatch = matchAny(text, [
+      /관련 엔티티:\s*(\d+)/,
+      /\u76f8\u5173\u5b9e\u4f53:\s*(\d+)/
+    ])
+    const relMatch = matchAny(text, [
+      /관계 사슬:\s*(\d+)/,
+      /관계망:\s*(\d+)/,
+      /\u5173\u7cfb\u94fe:\s*(\d+)/
+    ])
     if (factMatch) result.stats.facts = parseInt(factMatch[1])
     if (entityMatch) result.stats.entities = parseInt(entityMatch[1])
     if (relMatch) result.stats.relationships = parseInt(relMatch[1])
 
       // 하위 질문을 추출합니다. 개수 제한은 두지 않습니다.
-    const subQSection = text.match(/### 分析的하위 질문\n([\s\S]*?)(?=\n###|$)/)
+    const subQSection = matchAny(text, [
+      /### 분석된 하위 질문\n([\s\S]*?)(?=\n###|$)/,
+      /### \u5206\u6790\u7684하위 질문\n([\s\S]*?)(?=\n###|$)/,
+      /### \u5206\u6790\u7684\u5b50\u95ee\u9898\n([\s\S]*?)(?=\n###|$)/
+    ])
     if (subQSection) {
       const lines = subQSection[1].split('\n').filter(l => l.match(/^\d+\./))
       result.subQueries = lines.map(l => l.replace(/^\d+\.\s*/, '').trim()).filter(Boolean)
     }
 
     // 핵심 사실을 추출합니다 - 전체를 추출하며 개수 제한은 두지 않습니다
-    const factsSection = text.match(/### 【关键事实】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/)
+    const factsSection = matchAny(text, [
+      /### 【핵심 사실】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/,
+      /### 【\u5173\u952e\u4e8b\u5b9e】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/
+    ])
     if (factsSection) {
       const lines = factsSection[1].split('\n').filter(l => l.match(/^\d+\./))
       result.facts = lines.map(l => {
@@ -675,15 +707,24 @@ const parseInsightForge = (text) => {
     }
 
     // 핵심 엔티티를 추출합니다 - 요약과 관련 사실 수를 포함해 전체를 추출합니다
-    const entitySection = text.match(/### 【핵심 엔티티】\n([\s\S]*?)(?=\n###|$)/)
+    const entitySection = matchAny(text, [
+      /### 【핵심 엔티티】\n([\s\S]*?)(?=\n###|$)/,
+      /### 【\u5173\u952e\u5b9e\u4f53】\n([\s\S]*?)(?=\n###|$)/
+    ])
     if (entitySection) {
       const entityText = entitySection[1]
       // "- **" 기준으로 엔티티 블록을 나눕니다
       const entityBlocks = entityText.split(/\n(?=- \*\*)/).filter(b => b.trim().startsWith('- **'))
       result.entities = entityBlocks.map(block => {
         const nameMatch = block.match(/^-\s*\*\*(.+?)\*\*\s*\((.+?)\)/)
-        const summaryMatch = block.match(/摘要:\s*"?(.+?)"?(?:\n|$)/)
-        const relatedMatch = block.match(/相关事实:\s*(\d+)/)
+        const summaryMatch = matchAny(block, [
+          /요약:\s*"?(.+?)"?(?:\n|$)/,
+          /\u6458\u8981:\s*"?(.+?)"?(?:\n|$)/
+        ])
+        const relatedMatch = matchAny(block, [
+          /관련 사실:\s*(\d+)/,
+          /\u76f8\u5173\u4e8b\u5b9e:\s*(\d+)/
+        ])
         return {
           name: nameMatch ? nameMatch[1].trim() : '',
           type: nameMatch ? nameMatch[2].trim() : '',
@@ -694,7 +735,11 @@ const parseInsightForge = (text) => {
     }
 
     // 관계망을 추출합니다 - 전체를 추출하며 개수 제한은 두지 않습니다
-    const relSection = text.match(/### 【관계망】\n([\s\S]*?)(?=\n###|$)/)
+    const relSection = matchAny(text, [
+      /### 【관계 사슬】\n([\s\S]*?)(?=\n###|$)/,
+      /### 【관계망】\n([\s\S]*?)(?=\n###|$)/,
+      /### 【\u5173\u7cfb\u94fe】\n([\s\S]*?)(?=\n###|$)/
+    ])
     if (relSection) {
       const lines = relSection[1].split('\n').filter(l => l.trim().startsWith('-'))
       result.relations = lines.map(l => {
@@ -706,7 +751,7 @@ const parseInsightForge = (text) => {
       }).filter(Boolean)
     }
   } catch (e) {
-    console.warn('인사이트 포지 파싱에 실패했습니다:', e)
+    warnLog('인사이트 포지 파싱에 실패했습니다:', e)
   }
 
   return result
@@ -723,21 +768,39 @@ const parsePanorama = (text) => {
 
   try {
     // 쿼리를 추출합니다
-    const queryMatch = text.match(/查询:\s*(.+?)(?:\n|$)/)
+    const queryMatch = matchAny(text, [
+      /질문:\s*(.+?)(?:\n|$)/,
+      /\u67e5\u8be2:\s*(.+?)(?:\n|$)/
+    ])
     if (queryMatch) result.query = queryMatch[1].trim()
 
     // 통계 데이터를 추출합니다
-    const nodesMatch = text.match(/总节点数:\s*(\d+)/)
-    const edgesMatch = text.match(/总边数:\s*(\d+)/)
-    const activeMatch = text.match(/当前有效事实:\s*(\d+)/)
-    const histMatch = text.match(/历史\/过期事实:\s*(\d+)/)
+    const nodesMatch = matchAny(text, [
+      /총 노드 수:\s*(\d+)/,
+      /\u603b\u8282\u70b9\u6570:\s*(\d+)/
+    ])
+    const edgesMatch = matchAny(text, [
+      /총 엣지 수:\s*(\d+)/,
+      /\u603b\u8fb9\u6570:\s*(\d+)/
+    ])
+    const activeMatch = matchAny(text, [
+      /현재 유효 사실:\s*(\d+)/,
+      /\u5f53\u524d\u6709\u6548\u4e8b\u5b9e:\s*(\d+)/
+    ])
+    const histMatch = matchAny(text, [
+      /과거\/만료 사실:\s*(\d+)/,
+      /\u5386\u53f2\/\u8fc7\u671f\u4e8b\u5b9e:\s*(\d+)/
+    ])
     if (nodesMatch) result.stats.nodes = parseInt(nodesMatch[1])
     if (edgesMatch) result.stats.edges = parseInt(edgesMatch[1])
     if (activeMatch) result.stats.activeFacts = parseInt(activeMatch[1])
     if (histMatch) result.stats.historicalFacts = parseInt(histMatch[1])
 
     // 현재 유효한 사실을 추출합니다 - 전체를 추출하며 개수 제한은 두지 않습니다
-    const activeSection = text.match(/### 【当前有效事实】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/)
+    const activeSection = matchAny(text, [
+      /### 【현재 유효 사실】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/,
+      /### 【\u5f53\u524d\u6709\u6548\u4e8b\u5b9e】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/
+    ])
     if (activeSection) {
       const lines = activeSection[1].split('\n').filter(l => l.match(/^\d+\./))
       result.activeFacts = lines.map(l => {
@@ -748,7 +811,10 @@ const parsePanorama = (text) => {
     }
 
     // 과거/만료 사실을 추출합니다 - 전체를 추출하며 개수 제한은 두지 않습니다
-    const histSection = text.match(/### 【历史\/过期事实】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/)
+    const histSection = matchAny(text, [
+      /### 【과거\/만료 사실】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/,
+      /### 【\u5386\u53f2\/\u8fc7\u671f\u4e8b\u5b9e】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/
+    ])
     if (histSection) {
       const lines = histSection[1].split('\n').filter(l => l.match(/^\d+\./))
       result.historicalFacts = lines.map(l => {
@@ -768,7 +834,7 @@ const parsePanorama = (text) => {
       }).filter(Boolean)
     }
   } catch (e) {
-    console.warn('파노라마 파싱에 실패했습니다:', e)
+    warnLog('파노라마 파싱에 실패했습니다:', e)
   }
 
   return result
@@ -787,11 +853,17 @@ const parseInterview = (text) => {
 
   try {
     // 인터뷰 주제를 추출합니다
-    const topicMatch = text.match(/\*\*采访主题:\*\*\s*(.+?)(?:\n|$)/)
+    const topicMatch = matchAny(text, [
+      /\*\*인터뷰 주제:\*\*\s*(.+?)(?:\n|$)/,
+      /\*\*\u91c7\u8bbf\u4e3b\u9898:\*\*\s*(.+?)(?:\n|$)/
+    ])
     if (topicMatch) result.topic = topicMatch[1].trim()
 
     // 인터뷰 인원을 추출합니다(예: "5 / 9 명의 시뮬레이션 에이전트")
-    const countMatch = text.match(/\*\*采访人数:\*\*\s*(\d+)\s*\/\s*(\d+)/)
+    const countMatch = matchAny(text, [
+      /\*\*인터뷰 인원:\*\*\s*(\d+)\s*\/\s*(\d+)/,
+      /\*\*\u91c7\u8bbf\u4eba\u6570:\*\*\s*(\d+)\s*\/\s*(\d+)/
+    ])
     if (countMatch) {
       result.successCount = parseInt(countMatch[1])
       result.totalCount = parseInt(countMatch[2])
@@ -799,7 +871,11 @@ const parseInterview = (text) => {
     }
 
     // 인터뷰 대상 선택 이유를 추출합니다
-    const reasonMatch = text.match(/### 采访对象선택 이유\n([\s\S]*?)(?=\n---\n|\n### 采访实录)/)
+    const reasonMatch = matchAny(text, [
+      /### 인터뷰 대상 선택 이유\n([\s\S]*?)(?=\n---\n|\n### 인터뷰 기록)/,
+      /### \u91c7\u8bbf\u5bf9\u8c61선택 이유\n([\s\S]*?)(?=\n---\n|\n### \u91c7\u8bbf\u5b9e\u5f55)/,
+      /### \u91c7\u8bbf\u5bf9\u8c61\u9009\u62e9\u7406\u7531\n([\s\S]*?)(?=\n---\n|\n### \u91c7\u8bbf\u5b9e\u5f55)/
+    ])
     if (reasonMatch) {
       result.selectionReason = reasonMatch[1].trim()
     }
@@ -819,7 +895,7 @@ const parseInterview = (text) => {
         let reasonStart = null
 
         // 형식 1: 숫자. **이름(index=X)**: 이유
-        // 예: 1. **校友_345(index=1)**: 우한대 동문으로서...
+        // 예: 1. **alumni_345(index=1)**: 우한대 동문으로서...
         headerMatch = line.match(/^\d+\.\s*\*\*([^*（(]+)(?:[（(]index\s*=?\s*\d+[)）])?\*\*[：:]\s*(.*)/)
         if (headerMatch) {
           name = headerMatch[1].trim()
@@ -827,9 +903,9 @@ const parseInterview = (text) => {
         }
 
         // 형식 2: - 이름 선택(index X): 이유
-        // 예: - 选择家长_601(index 0): 학부모 집단의 대표로서...
+        // 예: - selected_parent_601(index 0): 학부모 집단의 대표로서...
         if (!headerMatch) {
-          headerMatch = line.match(/^-\s*选择([^（(]+)(?:[（(]index\s*=?\s*\d+[)）])?[：:]\s*(.*)/)
+          headerMatch = line.match(/^-\s*(?:선택|\u9009\u62e9)([^（(]+)(?:[（(]index\s*=?\s*\d+[)）])?[：:]\s*(.*)/)
           if (headerMatch) {
             name = headerMatch[1].trim()
             reasonStart = headerMatch[2]
@@ -837,7 +913,7 @@ const parseInterview = (text) => {
         }
 
         // 형식 3: - **이름(index X)**: 이유
-        // 예: - **家长_601(index 0)**: 학부모 집단의 대표로서...
+        // 예: - **parent_601(index 0)**: 학부모 집단의 대표로서...
         if (!headerMatch) {
           headerMatch = line.match(/^-\s*\*\*([^*（(]+)(?:[（(]index\s*=?\s*\d+[)）])?\*\*[：:]\s*(.*)/)
           if (headerMatch) {
@@ -854,7 +930,7 @@ const parseInterview = (text) => {
           // 새 사람의 처리를 시작합니다
           currentName = name
           currentReason = reasonStart ? [reasonStart.trim()] : []
-        } else if (currentName && line.trim() && !line.match(/^未选|^综上|^最终选择/)) {
+        } else if (currentName && line.trim() && !line.match(/^미선택|^\u672a\u9009|^종합하면|^\u7efc\u4e0a|^최종 선택|^\u6700\u7ec8\u9009\u62e9/)) {
           // 이유의 이어지는 줄입니다(끝부분 요약 단락은 제외)
           currentReason.push(line.trim())
         }
@@ -871,7 +947,7 @@ const parseInterview = (text) => {
     const individualReasons = parseIndividualReasons(result.selectionReason)
 
     // 각 인터뷰 기록을 추출합니다
-    const interviewBlocks = text.split(/#### 采访 #\d+:/).slice(1)
+    const interviewBlocks = text.split(/#### (?:인터뷰|\u91c7\u8bbf) #\d+:/).slice(1)
 
     interviewBlocks.forEach((block, index) => {
       const interview = {
@@ -901,13 +977,19 @@ const parseInterview = (text) => {
       }
 
       // 소개를 추출합니다
-      const bioMatch = block.match(/_简介:\s*([\s\S]*?)_\n/)
+      const bioMatch = matchAny(block, [
+        /_소개:\s*([\s\S]*?)_\n/,
+        /_\u7b80\u4ecb:\s*([\s\S]*?)_\n/
+      ])
       if (bioMatch) {
         interview.bio = bioMatch[1].trim().replace(/\.\.\.$/, '...')
       }
 
       // 질문 목록을 추출합니다
-      const qMatch = block.match(/\*\*Q:\*\*\s*([\s\S]*?)(?=\n\n\*\*A:\*\*|\*\*A:\*\*)/)
+      const qMatch = matchAny(block, [
+        /\*\*질문:\*\*\s*([\s\S]*?)(?=\n\n\*\*(?:답변|A):\*\*|\*\*(?:답변|A):\*\*)/,
+        /\*\*Q:\*\*\s*([\s\S]*?)(?=\n\n\*\*(?:답변|A):\*\*|\*\*(?:답변|A):\*\*)/
+      ])
       if (qMatch) {
         const qText = qMatch[1].trim()
         // 숫자 번호를 기준으로 질문을 분리합니다
@@ -924,13 +1006,22 @@ const parseInterview = (text) => {
       }
 
       // 답변을 추출합니다 - Twitter와 Reddit으로 분리합니다
-      const answerMatch = block.match(/\*\*A:\*\*\s*([\s\S]*?)(?=\*\*关键引言|$)/)
+      const answerMatch = matchAny(block, [
+        /\*\*답변:\*\*\s*([\s\S]*?)(?=\*\*(?:핵심 인용|\u5173\u952e\u5f15\u8a00)|$)/,
+        /\*\*A:\*\*\s*([\s\S]*?)(?=\*\*(?:핵심 인용|\u5173\u952e\u5f15\u8a00)|$)/
+      ])
       if (answerMatch) {
         const answerText = answerMatch[1].trim()
 
         // Twitter와 Reddit 답변을 분리합니다
-        const twitterMatch = answerText.match(/【Twitter平台回答】\n?([\s\S]*?)(?=【Reddit平台回答】|$)/)
-        const redditMatch = answerText.match(/【Reddit平台回答】\n?([\s\S]*?)$/)
+        const twitterMatch = matchAny(answerText, [
+          /【트위터 플랫폼 답변】\n?([\s\S]*?)(?=【레딧 플랫폼 답변】|【Reddit\u5e73\u53f0\u56de\u7b54】|$)/,
+          /【Twitter\u5e73\u53f0\u56de\u7b54】\n?([\s\S]*?)(?=【Reddit\u5e73\u53f0\u56de\u7b54】|【레딧 플랫폼 답변】|$)/
+        ])
+        const redditMatch = matchAny(answerText, [
+          /【레딧 플랫폼 답변】\n?([\s\S]*?)$/,
+          /【Reddit\u5e73\u53f0\u56de\u7b54】\n?([\s\S]*?)$/
+        ])
 
         if (twitterMatch) {
           interview.twitterAnswer = twitterMatch[1].trim()
@@ -942,11 +1033,11 @@ const parseInterview = (text) => {
         // 플랫폼 폴백 로직(구식 형식: 플랫폼 표시가 하나만 있는 경우와 호환)
         if (!twitterMatch && redditMatch) {
           // Reddit 답변만 있는 경우, 자리표시자가 아닐 때만 기본 표시용으로 복사합니다
-          if (interview.redditAnswer && interview.redditAnswer !== '（该平台未获得回复）') {
+          if (interview.redditAnswer && !isPlaceholderText(interview.redditAnswer)) {
             interview.twitterAnswer = interview.redditAnswer
           }
         } else if (twitterMatch && !redditMatch) {
-          if (interview.twitterAnswer && interview.twitterAnswer !== '（该平台未获得回复）') {
+          if (interview.twitterAnswer && !isPlaceholderText(interview.twitterAnswer)) {
             interview.redditAnswer = interview.twitterAnswer
           }
         } else if (!twitterMatch && !redditMatch) {
@@ -956,7 +1047,10 @@ const parseInterview = (text) => {
       }
 
       // 핵심 인용문을 추출합니다(여러 인용 부호 형식과 호환)
-      const quotesMatch = block.match(/\*\*关键引言:\*\*\n([\s\S]*?)(?=\n---|\n####|$)/)
+      const quotesMatch = matchAny(block, [
+        /\*\*핵심 인용:\*\*\n([\s\S]*?)(?=\n---|\n####|$)/,
+        /\*\*\u5173\u952e\u5f15\u8a00:\*\*\n([\s\S]*?)(?=\n---|\n####|$)/
+      ])
       if (quotesMatch) {
         const quotesText = quotesMatch[1]
         // 우선 > "text" 형식을 매칭합니다
@@ -977,13 +1071,15 @@ const parseInterview = (text) => {
       }
     })
 
-    // 提取采访摘要
-    const summaryMatch = text.match(/### 采访摘要与核心观点\n([\s\S]*?)$/)
+    const summaryMatch = matchAny(text, [
+      /### 인터뷰 요약 및 핵심 관점\n([\s\S]*?)$/,
+      /### \u91c7\u8bbf\u6458\u8981\u4e0e\u6838\u5fc3\u89c2\u70b9\n([\s\S]*?)$/
+    ])
     if (summaryMatch) {
       result.summary = summaryMatch[1].trim()
     }
   } catch (e) {
-    console.warn('인터뷰 파싱에 실패했습니다:', e)
+    warnLog('인터뷰 파싱에 실패했습니다:', e)
   }
 
   return result
@@ -1000,22 +1096,34 @@ const parseQuickSearch = (text) => {
 
   try {
     // 검색 쿼리를 추출합니다
-    const queryMatch = text.match(/搜索查询:\s*(.+?)(?:\n|$)/)
+    const queryMatch = matchAny(text, [
+      /검색어:\s*(.+?)(?:\n|$)/,
+      /\u641c\u7d22\u67e5\u8be2:\s*(.+?)(?:\n|$)/
+    ])
     if (queryMatch) result.query = queryMatch[1].trim()
 
     // 결과 수를 추출합니다
-    const countMatch = text.match(/找到\s*(\d+)\s*条/)
+    const countMatch = matchAny(text, [
+      /관련 정보\s*(\d+)건을 찾았습니다/,
+      /\u627e\u5230\s*(\d+)\s*\u6761/
+    ])
     if (countMatch) result.count = parseInt(countMatch[1])
 
     // 관련 사실을 추출합니다 - 전체를 추출하며 개수 제한은 두지 않습니다
-    const factsSection = text.match(/### 相关事实:\n([\s\S]*)$/)
+    const factsSection = matchAny(text, [
+      /### 관련 사실:\n([\s\S]*?)(?=\n###|$)/,
+      /### \u76f8\u5173\u4e8b\u5b9e:\n([\s\S]*?)(?=\n###|$)/
+    ])
     if (factsSection) {
       const lines = factsSection[1].split('\n').filter(l => l.match(/^\d+\./))
       result.facts = lines.map(l => l.replace(/^\d+\.\s*/, '').trim()).filter(Boolean)
     }
 
     // 간선 정보를 추출해 봅니다(있다면)
-    const edgesSection = text.match(/### 相关边:\n([\s\S]*?)(?=\n###|$)/)
+    const edgesSection = matchAny(text, [
+      /### 관련 간선:\n([\s\S]*?)(?=\n###|$)/,
+      /### \u76f8\u5173\u8fb9:\n([\s\S]*?)(?=\n###|$)/
+    ])
     if (edgesSection) {
       const lines = edgesSection[1].split('\n').filter(l => l.trim().startsWith('-'))
       result.edges = lines.map(l => {
@@ -1028,7 +1136,10 @@ const parseQuickSearch = (text) => {
     }
 
     // 노드 정보를 추출해 봅니다(있다면)
-    const nodesSection = text.match(/### 관련 노드:\n([\s\S]*?)(?=\n###|$)/)
+    const nodesSection = matchAny(text, [
+      /### 관련 노드:\n([\s\S]*?)(?=\n###|$)/,
+      /### \u76f8\u5173\u8282\u70b9:\n([\s\S]*?)(?=\n###|$)/
+    ])
     if (nodesSection) {
       const lines = nodesSection[1].split('\n').filter(l => l.trim().startsWith('-'))
       result.nodes = lines.map(l => {
@@ -1040,7 +1151,7 @@ const parseQuickSearch = (text) => {
       }).filter(Boolean)
     }
   } catch (e) {
-    console.warn('빠른 검색 파싱에 실패했습니다:', e)
+    warnLog('빠른 검색 파싱에 실패했습니다:', e)
   }
 
   return result
@@ -1417,7 +1528,14 @@ const InterviewDisplay = {
     const isPlaceholderText = (text) => {
       if (!text) return true
       const t = text.trim()
-      return t === '（该平台未获得回复）' || t === '(该平台未获得回复)' || t === '[无回复]'
+      return (
+        t === '(해당 플랫폼에서 응답을 받지 못했습니다)' ||
+        t === '（해당 플랫폼에서 응답을 받지 못했습니다）' ||
+        t === '（\u8be5\u5e73\u53f0\u672a\u83b7\u5f97\u56de\u590d）' ||
+        t === '(\u8be5\u5e73\u53f0\u672a\u83b7\u5f97\u56de\u590d)' ||
+        t === '[무응답]' ||
+        t === '[\u65e0\u56de\u590d]'
+      )
     }
 
     // 질문 번호를 기준으로 답변을 나눠 봅니다
@@ -1426,14 +1544,14 @@ const InterviewDisplay = {
       if (isPlaceholderText(answerText)) return ['']
 
       // 두 가지 번호 형식을 지원합니다:
-      // 1. "문제X：" 또는 "문제X:"(중국어 형식, 새 백엔드 형식)
+      // 1. "질문X：" 또는 레거시 한자권 형식
       // 2. "1. " 또는 "\n1. "(숫자+점, 구식 형식 호환)
       let matches = []
       let match
 
-      // 먼저 "문제X：" 형식을 시도합니다
-      const cnPattern = /(?:^|[\r\n]+)问题(\d+)[：:]\s*/g
-      while ((match = cnPattern.exec(answerText)) !== null) {
+      // 먼저 "질문X:" 또는 레거시 한자권 형식을 시도합니다
+      const questionPattern = /(?:^|[\r\n]+)(?:질문|\u95ee\u9898)(\d+)[：:]\s*/g
+      while ((match = questionPattern.exec(answerText)) !== null) {
         matches.push({
           num: parseInt(match[1]),
           index: match.index,
@@ -1456,7 +1574,7 @@ const InterviewDisplay = {
       // 번호를 찾지 못했거나 하나만 찾으면 전체를 반환합니다
       if (matches.length <= 1) {
         const cleaned = answerText
-          .replace(/^问题\d+[：:]\s*/, '')
+          .replace(/^(?:질문|\u95ee\u9898)\d+[：:]\s*/, '')
           .replace(/^\d+\.\s+/, '')
           .trim()
         return [cleaned || answerText]
@@ -2106,6 +2224,28 @@ const getLogLevelClass = (log) => {
 let agentLogTimer = null
 let consoleLogTimer = null
 
+const responseHasToolCall = (response) => {
+  if (!response) return false
+  if (response.includes('<tool_call>')) return true
+  return /"(?:name|tool)"\s*:\s*"(?:insight_forge|panorama_search|quick_search|interview_agents)"/.test(response)
+}
+
+const normalizeAgentLog = (log) => {
+  if (!log || log.action !== 'llm_response') return log
+
+  const details = { ...(log.details || {}) }
+  const response = details.response || ''
+  const extractedFinalContent = extractFinalContent(response)
+
+  details.has_tool_calls = Boolean(details.has_tool_calls || responseHasToolCall(response))
+  details.has_final_answer = Boolean(details.has_final_answer || extractedFinalContent)
+
+  return {
+    ...log,
+    details
+  }
+}
+
 const fetchAgentLog = async () => {
   if (!props.reportId) return
 
@@ -2116,7 +2256,8 @@ const fetchAgentLog = async () => {
       const newLogs = res.data.logs || []
 
       if (newLogs.length > 0) {
-        newLogs.forEach(log => {
+        newLogs.forEach(rawLog => {
+          const log = normalizeAgentLog(rawLog)
           agentLogs.value.push(log)
 
           if (log.action === 'planning_complete' && log.details?.outline) {
@@ -2165,7 +2306,7 @@ const fetchAgentLog = async () => {
       }
     }
   } catch (err) {
-    console.warn('에이전트 로그를 불러오지 못했습니다:', err)
+    warnLog('에이전트 로그를 불러오지 못했습니다:', err)
   }
 }
 
@@ -2188,9 +2329,15 @@ const extractFinalContent = (response) => {
   }
 
   // 최종 답변: 뒤의 내용을 찾아 봅니다
-  const chineseFinalMatch = response.match(/最终答案[:：]\s*\n*([\s\S]*)$/i)
-  if (chineseFinalMatch) {
-    return chineseFinalMatch[1].trim()
+  const koreanFinalMatch = response.match(/최종\s*답변[:：]\s*\n*([\s\S]*)$/i)
+  if (koreanFinalMatch) {
+    return koreanFinalMatch[1].trim()
+  }
+
+  // 최종 답변: 뒤의 내용을 찾아 봅니다
+  const legacyFinalMatch = response.match(/\u6700\u7ec8\u7b54\u6848[:：]\s*\n*([\s\S]*)$/i)
+  if (legacyFinalMatch) {
+    return legacyFinalMatch[1].trim()
   }
 
   // ##, #, > 로 시작하면 직접 입력된 markdown일 수 있습니다
@@ -2235,7 +2382,7 @@ const fetchConsoleLog = async () => {
       }
     }
   } catch (err) {
-    console.warn('콘솔 로그를 불러오지 못했습니다:', err)
+    warnLog('콘솔 로그를 불러오지 못했습니다:', err)
   }
 }
 
@@ -2280,7 +2427,7 @@ watch(() => props.reportId, async (newId) => {
   display: flex;
   flex-direction: column;
   background: #F8F9FA;
-  font-family: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+  font-family: 'Inter', 'Noto Sans KR', system-ui, sans-serif;
   overflow: hidden;
 }
 
@@ -2583,7 +2730,7 @@ watch(() => props.reportId, async (newId) => {
 
 /* 생성된 콘텐츠 */
 .generated-content {
-  font-family: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+  font-family: 'Inter', 'Noto Sans KR', system-ui, sans-serif;
   font-size: 14px;
   line-height: 1.8;
   color: #374151;

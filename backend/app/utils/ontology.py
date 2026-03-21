@@ -5,6 +5,7 @@ LLM 결과나 저장된 프로젝트 데이터의 들쭉날쭉한 형태를 cano
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any, Dict, List
 
@@ -32,6 +33,20 @@ def _truncate(text: str, limit: int = 100) -> str:
     return text[: limit - 3] + "..."
 
 
+def _decode_jsonish(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+
+    stripped = value.strip()
+    if not stripped or stripped[0] not in "[{":
+        return value
+
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        return value
+
+
 def normalize_attribute_defs(raw_attributes: Any) -> List[Dict[str, str]]:
     normalized: List[Dict[str, str]] = []
     seen = set()
@@ -50,34 +65,56 @@ def normalize_attribute_defs(raw_attributes: Any) -> List[Dict[str, str]]:
             }
         )
 
-    if isinstance(raw_attributes, list):
-        for item in raw_attributes:
-            if isinstance(item, dict):
-                if item.get("name"):
-                    add_attribute(item.get("name"), item.get("type"), item.get("description"))
-            elif isinstance(item, str):
-                add_attribute(item)
-    elif isinstance(raw_attributes, dict):
-        if raw_attributes.get("name"):
-            add_attribute(raw_attributes.get("name"), raw_attributes.get("type"), raw_attributes.get("description"))
-        else:
-            for key, value in raw_attributes.items():
+    def consume(candidate: Any) -> None:
+        candidate = _decode_jsonish(candidate)
+
+        if isinstance(candidate, list):
+            for item in candidate:
+                consume(item)
+            return
+
+        if isinstance(candidate, dict):
+            decoded_name = _decode_jsonish(candidate.get("name"))
+            if candidate.get("name") and not isinstance(decoded_name, str):
+                consume(decoded_name)
+                return
+
+            if candidate.get("name"):
+                add_attribute(candidate.get("name"), candidate.get("type"), candidate.get("description"))
+                return
+
+            for key, value in candidate.items():
                 if isinstance(value, dict):
                     add_attribute(key, value.get("type"), value.get("description"))
                 else:
                     add_attribute(key)
-    elif isinstance(raw_attributes, str):
-        add_attribute(raw_attributes)
+            return
+
+        if isinstance(candidate, str):
+            add_attribute(candidate)
+
+    consume(raw_attributes)
 
     return normalized
 
 
 def normalize_examples(raw_examples: Any) -> List[str]:
-    if isinstance(raw_examples, list):
-        return [_stringify(item) for item in raw_examples if _stringify(item)]
+    normalized: List[str] = []
 
-    example = _stringify(raw_examples)
-    return [example] if example else []
+    def consume(candidate: Any) -> None:
+        candidate = _decode_jsonish(candidate)
+
+        if isinstance(candidate, list):
+            for item in candidate:
+                consume(item)
+            return
+
+        example = _stringify(candidate)
+        if example:
+            normalized.append(example)
+
+    consume(raw_examples)
+    return normalized
 
 
 def _parse_source_target_string(value: str) -> List[Dict[str, str]]:
@@ -119,18 +156,23 @@ def normalize_source_targets(raw_source_targets: Any) -> List[Dict[str, str]]:
         seen.add(pair)
         normalized.append({"source": source_name, "target": target_name})
 
-    if isinstance(raw_source_targets, list):
-        for item in raw_source_targets:
-            if isinstance(item, dict):
-                add_pair(item.get("source"), item.get("target"))
-            elif isinstance(item, str):
-                for pair in _parse_source_target_string(item):
-                    add_pair(pair["source"], pair["target"])
-    elif isinstance(raw_source_targets, dict):
-        add_pair(raw_source_targets.get("source"), raw_source_targets.get("target"))
-    elif isinstance(raw_source_targets, str):
-        for pair in _parse_source_target_string(raw_source_targets):
-            add_pair(pair["source"], pair["target"])
+    def consume(candidate: Any) -> None:
+        candidate = _decode_jsonish(candidate)
+
+        if isinstance(candidate, list):
+            for item in candidate:
+                consume(item)
+            return
+
+        if isinstance(candidate, dict):
+            add_pair(candidate.get("source"), candidate.get("target"))
+            return
+
+        if isinstance(candidate, str):
+            for pair in _parse_source_target_string(candidate):
+                add_pair(pair["source"], pair["target"])
+
+    consume(raw_source_targets)
 
     return normalized
 

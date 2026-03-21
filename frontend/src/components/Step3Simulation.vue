@@ -295,6 +295,7 @@ import {
   getRunStatusDetail
 } from '../api/simulation'
 import { generateReport } from '../api/report'
+import { warnLog } from '../utils/logger'
 
 const props = defineProps({
   simulationId: String,
@@ -535,7 +536,7 @@ const fetchRunStatus = async () => {
       }
     }
   } catch (err) {
-    console.warn('실행 상태를 가져오지 못했습니다:', err)
+    warnLog('실행 상태를 가져오지 못했습니다:', err)
   }
 }
 
@@ -593,7 +594,7 @@ const fetchRunStatusDetail = async () => {
       // 새 동작은 하단에 추가됩니다
     }
   } catch (err) {
-    console.warn('상세 상태를 가져오지 못했습니다:', err)
+    warnLog('상세 상태를 가져오지 못했습니다:', err)
   }
 }
 
@@ -730,7 +731,7 @@ onMounted(() => {
         }
       }
     } catch (err) {
-      console.warn('기존 실행 상태 확인 실패:', err)
+      warnLog('기존 실행 상태 확인 실패:', err)
     }
 
     await doStartSimulation({ force: false })
@@ -750,7 +751,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   background: #FFFFFF;
-  font-family: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
+  font-family: 'Space Grotesk', 'Noto Sans KR', system-ui, sans-serif;
   overflow: hidden;
 }
 

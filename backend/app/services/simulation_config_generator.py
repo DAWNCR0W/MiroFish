@@ -20,6 +20,7 @@ from openai import OpenAI
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.simulation_schedule import normalize_active_hours
 from ..utils.llm_client import (
     create_chat_completion_with_fallback,
     extract_structured_response_text,
@@ -654,12 +655,12 @@ class SimulationConfigGenerator:
             minutes_per_round=result.get("minutes_per_round", 60),  # 기본값: 매 라운드 1시간
             agents_per_hour_min=agents_per_hour_min,
             agents_per_hour_max=agents_per_hour_max,
-            peak_hours=result.get("peak_hours", [19, 20, 21, 22]),
-            off_peak_hours=result.get("off_peak_hours", [0, 1, 2, 3, 4, 5]),
+            peak_hours=normalize_active_hours(result.get("peak_hours"), [19, 20, 21, 22]),
+            off_peak_hours=normalize_active_hours(result.get("off_peak_hours"), [0, 1, 2, 3, 4, 5]),
             off_peak_activity_multiplier=0.05,  # 새벽에는 거의 활동이 없음
-            morning_hours=result.get("morning_hours", [6, 7, 8]),
+            morning_hours=normalize_active_hours(result.get("morning_hours"), [6, 7, 8]),
             morning_activity_multiplier=0.4,
-            work_hours=result.get("work_hours", list(range(9, 19))),
+            work_hours=normalize_active_hours(result.get("work_hours"), list(range(9, 19))),
             work_activity_multiplier=0.7,
             peak_activity_multiplier=1.5
         )
@@ -913,7 +914,10 @@ JSON 형식으로 반환하세요(마크다운 금지):
                 activity_level=cfg.get("activity_level", 0.5),
                 posts_per_hour=cfg.get("posts_per_hour", 0.5),
                 comments_per_hour=cfg.get("comments_per_hour", 1.0),
-                active_hours=cfg.get("active_hours", list(range(9, 23))),
+                active_hours=normalize_active_hours(
+                    cfg.get("active_hours"),
+                    default=list(range(9, 23)),
+                ),
                 response_delay_min=cfg.get("response_delay_min", 5),
                 response_delay_max=cfg.get("response_delay_max", 60),
                 sentiment_bias=cfg.get("sentiment_bias", 0.0),

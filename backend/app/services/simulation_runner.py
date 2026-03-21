@@ -19,6 +19,7 @@ from enum import Enum
 from queue import Queue
 
 from ..utils.logger import get_logger
+from ..utils.simulation_schedule import normalize_active_hours
 from .graph_memory_updater import GraphMemoryManager
 from .simulation_ipc import SimulationIPCClient, CommandType, IPCResponse
 
@@ -29,6 +30,37 @@ _cleanup_registered = False
 
 # 플랫폼 감지
 IS_WINDOWS = sys.platform == 'win32'
+
+
+def _normalize_simulation_config_payload(config: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(config or {})
+
+    time_config = dict(normalized.get("time_config") or {})
+    time_config["peak_hours"] = normalize_active_hours(time_config.get("peak_hours"), [19, 20, 21, 22])
+    time_config["off_peak_hours"] = normalize_active_hours(time_config.get("off_peak_hours"), [0, 1, 2, 3, 4, 5])
+    time_config["morning_hours"] = normalize_active_hours(time_config.get("morning_hours"), [6, 7, 8])
+    time_config["work_hours"] = normalize_active_hours(time_config.get("work_hours"), list(range(9, 19)))
+    normalized["time_config"] = time_config
+
+    agent_configs = []
+    for agent_config in normalized.get("agent_configs", []):
+        if not isinstance(agent_config, dict):
+            continue
+        cleaned = dict(agent_config)
+        cleaned["active_hours"] = normalize_active_hours(
+            cleaned.get("active_hours"),
+            list(range(8, 23)),
+        )
+        agent_configs.append(cleaned)
+    normalized["agent_configs"] = agent_configs
+
+    return normalized
+
+
+def _is_truthy_env(value: Optional[str]) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 class RunnerStatus(str, Enum):
@@ -226,6 +258,31 @@ class SimulationRunner:
     _graph_memory_enabled: Dict[str, bool] = {}  # simulation_id -> enabled
 
     @classmethod
+    def _cleanup_failed_start(cls, simulation_id: str, main_log_file=None):
+        """시뮬레이션 시작 중간 실패 시 남은 리소스를 정리한다."""
+        cls._processes.pop(simulation_id, None)
+        cls._action_queues.pop(simulation_id, None)
+        cls._monitor_threads.pop(simulation_id, None)
+
+        cached_stdout = cls._stdout_files.pop(simulation_id, None)
+        cached_stderr = cls._stderr_files.pop(simulation_id, None)
+
+        for file_handle in (main_log_file, cached_stdout, cached_stderr):
+            if file_handle:
+                try:
+                    file_handle.close()
+                except Exception:
+                    pass
+
+        if cls._graph_memory_enabled.get(simulation_id, False) or GraphMemoryManager.get_updater(simulation_id):
+            try:
+                GraphMemoryManager.stop_updater(simulation_id)
+                logger.info("시작 실패 후 그래프 메모리 업데이트기를 정리했습니다: simulation_id=%s", simulation_id)
+            except Exception as cleanup_error:
+                logger.warning("시작 실패 후 그래프 메모리 업데이트기 정리에 실패했습니다: simulation_id=%s, error=%s", simulation_id, cleanup_error)
+        cls._graph_memory_enabled.pop(simulation_id, None)
+
+    @classmethod
     def get_run_state(cls, simulation_id: str) -> Optional[SimulationRunState]:
         """실행 상태를 가져옵니다."""
         if simulation_id in cls._run_states:
@@ -342,13 +399,38 @@ class SimulationRunner:
             raise ValueError("/prepare 인터페이스를 먼저 호출해 시뮬레이션 구성을 생성하세요")
 
         with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
+            raw_config = json.load(f)
+
+        config = _normalize_simulation_config_payload(raw_config)
+        if config != raw_config:
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+            logger.info("시뮬레이션 구성을 정규화했습니다: simulation_id=%s", simulation_id)
 
         # 실행 상태를 초기화합니다
         time_config = config.get("time_config", {})
         total_hours = time_config.get("total_simulation_hours", 72)
         minutes_per_round = time_config.get("minutes_per_round", 30)
+        if minutes_per_round <= 0:
+            raise ValueError("simulation_config.json의 minutes_per_round는 0보다 커야 합니다")
         total_rounds = int(total_hours * 60 / minutes_per_round)
+
+        if platform == "twitter":
+            script_name = "run_twitter_simulation.py"
+            twitter_running = True
+            reddit_running = False
+        elif platform == "reddit":
+            script_name = "run_reddit_simulation.py"
+            twitter_running = False
+            reddit_running = True
+        else:
+            script_name = "run_parallel_simulation.py"
+            twitter_running = True
+            reddit_running = True
+
+        script_path = os.path.join(cls.SCRIPTS_DIR, script_name)
+        if not os.path.exists(script_path):
+            raise ValueError(f"스크립트가 존재하지 않습니다: {script_path}")
 
         # 최대 라운드 수가 지정되면 잘라냅니다
         if max_rounds is not None and max_rounds > 0:
@@ -363,48 +445,29 @@ class SimulationRunner:
             total_rounds=total_rounds,
             total_simulation_hours=total_hours,
             started_at=datetime.now().isoformat(),
+            twitter_running=twitter_running,
+            reddit_running=reddit_running,
         )
 
         cls._save_run_state(state)
 
-        # 그래프 메모리 업데이트가 활성화되면 업데이트기를 생성합니다
-        if enable_graph_memory_update:
-            if not graph_id:
-                raise ValueError("그래프 메모리 업데이트를 활성화하려면 graph_id가 필요합니다")
-
-            try:
-                GraphMemoryManager.create_updater(simulation_id, graph_id)
-                cls._graph_memory_enabled[simulation_id] = True
-                logger.info(f"그래프 메모리 업데이트가 활성화되었습니다: simulation_id={simulation_id}, graph_id={graph_id}")
-            except Exception as e:
-                logger.error(f"그래프 메모리 업데이트기 생성에 실패했습니다: {e}")
-                cls._graph_memory_enabled[simulation_id] = False
-        else:
-            cls._graph_memory_enabled[simulation_id] = False
-
-        # 실행할 스크립트를 결정합니다(스크립트는 backend/scripts/ 디렉터리에 있습니다)
-        if platform == "twitter":
-            script_name = "run_twitter_simulation.py"
-            state.twitter_running = True
-        elif platform == "reddit":
-            script_name = "run_reddit_simulation.py"
-            state.reddit_running = True
-        else:
-            script_name = "run_parallel_simulation.py"
-            state.twitter_running = True
-            state.reddit_running = True
-
-        script_path = os.path.join(cls.SCRIPTS_DIR, script_name)
-
-        if not os.path.exists(script_path):
-            raise ValueError(f"스크립트가 존재하지 않습니다: {script_path}")
+        if enable_graph_memory_update and not graph_id:
+            raise ValueError("그래프 메모리 업데이트를 활성화하려면 graph_id가 필요합니다")
+        cls._graph_memory_enabled[simulation_id] = False
 
         # 동작 큐를 생성합니다
         action_queue = Queue()
         cls._action_queues[simulation_id] = action_queue
 
         # 시뮬레이션 프로세스를 시작합니다
+        main_log_file = None
         try:
+            # 그래프 메모리 업데이트가 활성화되면 업데이트기를 생성합니다
+            if enable_graph_memory_update:
+                GraphMemoryManager.create_updater(simulation_id, graph_id)
+                cls._graph_memory_enabled[simulation_id] = True
+                logger.info(f"그래프 메모리 업데이트가 활성화되었습니다: simulation_id={simulation_id}, graph_id={graph_id}")
+
             # 실행 명령을 구성하고 전체 경로를 사용합니다
             # 새로운 로그 구조:
             #   twitter/actions.jsonl - Twitter 동작 로그
@@ -466,6 +529,7 @@ class SimulationRunner:
             logger.info(f"시뮬레이션 시작 성공: {simulation_id}, pid={process.pid}, platform={platform}")
 
         except Exception as e:
+            cls._cleanup_failed_start(simulation_id, main_log_file=main_log_file)
             state.runner_status = RunnerStatus.FAILED
             state.error = str(e)
             cls._save_run_state(state)
@@ -533,8 +597,11 @@ class SimulationRunner:
                             error_info = f.read()[-2000:]  # 마지막 2000자를 가져옵니다
                 except Exception:
                     pass
-                state.error = f"프로세스 종료 코드: {exit_code}, 오류: {error_info}"
-                logger.error(f"시뮬레이션 실패: {simulation_id}, error={state.error}")
+                state.error = f"프로세스 종료 코드: {exit_code}. simulation.log를 확인하세요."
+                if error_info:
+                    logger.error("시뮬레이션 실패: %s, exit_code=%s, log_tail=%s", simulation_id, exit_code, error_info)
+                else:
+                    logger.error("시뮬레이션 실패: %s, exit_code=%s", simulation_id, exit_code)
 
             state.twitter_running = False
             state.reddit_running = False
@@ -689,18 +756,21 @@ class SimulationRunner:
         """
         활성화된 모든 플랫폼이 시뮬레이션을 완료했는지 확인합니다.
 
-        해당 actions.jsonl 파일의 존재 여부로 플랫폼 활성화 여부를 판단합니다.
-
         Returns:
             활성화된 모든 플랫폼이 완료되었으면 True
         """
-        sim_dir = os.path.join(cls.RUN_STATE_DIR, state.simulation_id)
-        twitter_log = os.path.join(sim_dir, "twitter", "actions.jsonl")
-        reddit_log = os.path.join(sim_dir, "reddit", "actions.jsonl")
-
-        # 어떤 플랫폼이 활성화되었는지 확인합니다(파일 존재 여부로 판단)
-        twitter_enabled = os.path.exists(twitter_log)
-        reddit_enabled = os.path.exists(reddit_log)
+        twitter_enabled = (
+            state.twitter_running
+            or state.twitter_completed
+            or state.twitter_current_round > 0
+            or state.twitter_actions_count > 0
+        )
+        reddit_enabled = (
+            state.reddit_running
+            or state.reddit_completed
+            or state.reddit_current_round > 0
+            or state.reddit_actions_count > 0
+        )
 
         # 플랫폼이 활성화되었지만 완료되지 않았으면 False를 반환합니다
         if twitter_enabled and not state.twitter_completed:
@@ -1294,7 +1364,7 @@ class SimulationRunner:
         # WERKZEUG_RUN_MAIN=true는 reloader 자식 프로세스임을 뜻합니다
         # debug 모드가 아니면 이 환경 변수가 없어도 등록해야 합니다
         is_reloader_process = os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
-        is_debug_mode = os.environ.get('FLASK_DEBUG') == '1' or os.environ.get('WERKZEUG_RUN_MAIN') is not None
+        is_debug_mode = _is_truthy_env(os.environ.get('FLASK_DEBUG')) or os.environ.get('WERKZEUG_RUN_MAIN') is not None
 
         # debug 모드에서는 reloader 자식 프로세스에만 등록하고, 비-debug 모드에서는 항상 등록합니다
         if is_debug_mode and not is_reloader_process:
@@ -1626,6 +1696,7 @@ class SimulationRunner:
         if not ipc_client.check_env_alive():
             return {
                 "success": True,
+                "confirmed": True,
                 "message": "환경이 이미 닫혔습니다"
             }
 
@@ -1636,6 +1707,7 @@ class SimulationRunner:
 
             return {
                 "success": response.status.value == "completed",
+                "confirmed": response.status.value == "completed",
                 "message": "환경 종료 명령이 전송되었습니다",
                 "result": response.result,
                 "timestamp": response.timestamp
@@ -1644,6 +1716,7 @@ class SimulationRunner:
             # 제한 시간 초과는 환경이 종료 중이기 때문일 수 있습니다
             return {
                 "success": True,
+                "confirmed": False,
                 "message": "환경 종료 명령이 전송되었습니다(응답 대기 시간 초과, 환경이 종료 중일 수 있음)"
             }
 

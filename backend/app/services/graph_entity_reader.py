@@ -67,7 +67,7 @@ class GraphEntityReader:
         self.store = LocalGraphStore()
 
     def get_all_nodes(self, graph_id: str) -> List[Dict[str, Any]]:
-        logger.info(f"그래프 {graph_id}의 모든 노드를 가져오는 중...")
+        logger.debug("그래프 %s의 모든 노드를 가져오는 중...", graph_id)
         graph = self.store.get_graph(graph_id)
         nodes = []
         for node in graph.get("nodes", []):
@@ -78,11 +78,11 @@ class GraphEntityReader:
                 "summary": node.get("summary", ""),
                 "attributes": node.get("attributes", {}),
             })
-        logger.info(f"총 {len(nodes)}개 노드를 가져옴")
+        logger.debug("총 %s개 노드를 가져옴", len(nodes))
         return nodes
 
     def get_all_edges(self, graph_id: str) -> List[Dict[str, Any]]:
-        logger.info(f"그래프 {graph_id}의 모든 엣지를 가져오는 중...")
+        logger.debug("그래프 %s의 모든 엣지를 가져오는 중...", graph_id)
         graph = self.store.get_graph(graph_id)
         edges = []
         for edge in graph.get("edges", []):
@@ -94,7 +94,7 @@ class GraphEntityReader:
                 "target_node_uuid": edge.get("target_node_uuid", ""),
                 "attributes": edge.get("attributes", {}),
             })
-        logger.info(f"총 {len(edges)}개 엣지를 가져옴")
+        logger.debug("총 %s개 엣지를 가져옴", len(edges))
         return edges
 
     def get_node_edges(self, graph_id: str, node_uuid: str) -> List[Dict[str, Any]]:
@@ -110,7 +110,7 @@ class GraphEntityReader:
         defined_entity_types: Optional[List[str]] = None,
         enrich_with_edges: bool = True,
     ) -> FilteredEntities:
-        logger.info(f"그래프 {graph_id}의 엔티티 필터링을 시작함...")
+        logger.debug("그래프 %s의 엔티티 필터링을 시작함...", graph_id)
 
         all_nodes = self.get_all_nodes(graph_id)
         total_count = len(all_nodes)
@@ -178,8 +178,11 @@ class GraphEntityReader:
 
             filtered_entities.append(entity)
 
-        logger.info(
-            f"필터링 완료: 전체 노드 {total_count}, 조건 충족 {len(filtered_entities)}, 엔티티 유형: {entity_types_found}"
+        logger.debug(
+            "필터링 완료: 전체 노드 %s, 조건 충족 %s, 엔티티 유형: %s",
+            total_count,
+            len(filtered_entities),
+            sorted(entity_types_found),
         )
 
         return FilteredEntities(

@@ -82,6 +82,7 @@ import Step1GraphBuild from '../components/Step1GraphBuild.vue'
 import Step2EnvSetup from '../components/Step2EnvSetup.vue'
 import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
 import { getPendingUpload, clearPendingUpload } from '../store/pendingUpload'
+import { errorLog, warnLog } from '../utils/logger'
 
 const route = useRoute()
 const router = useRouter()
@@ -108,6 +109,12 @@ const systemLogs = ref([])
 // 폴링 타이머
 let pollTimer = null
 let graphPollTimer = null
+let pollFailureCount = 0
+let graphRefreshFailureCount = 0
+let lastGraphRefreshSummary = null
+
+const MAX_POLL_FAILURES = 3
+const MAX_GRAPH_REFRESH_FAILURES = 3
 
 // --- 계산된 레이아웃 스타일 ---
 const leftPanelStyle = computed(() => {
@@ -290,6 +297,7 @@ const startBuildGraph = async () => {
 }
 
 const startGraphPolling = () => {
+  stopGraphPolling()
   addLog('그래프 데이터 폴링을 시작했습니다...')
   fetchGraphData()
   graphPollTimer = setInterval(fetchGraphData, 10000)
@@ -302,18 +310,34 @@ const fetchGraphData = async () => {
     if (projRes.success && projRes.data.graph_id) {
       const gRes = await getGraphData(projRes.data.graph_id)
       if (gRes.success) {
+        graphRefreshFailureCount = 0
         graphData.value = gRes.data
         const nodeCount = gRes.data.node_count || gRes.data.nodes?.length || 0
         const edgeCount = gRes.data.edge_count || gRes.data.edges?.length || 0
-        addLog(`그래프 데이터를 새로고침했습니다. 노드: ${nodeCount}, 엣지: ${edgeCount}`)
+        const graphSummary = `${nodeCount}:${edgeCount}`
+        if (lastGraphRefreshSummary !== graphSummary) {
+          lastGraphRefreshSummary = graphSummary
+          addLog(`그래프 데이터를 새로고침했습니다. 노드: ${nodeCount}, 엣지: ${edgeCount}`)
+        }
       }
     }
   } catch (err) {
-    console.warn('그래프 가져오기 오류:', err)
+    graphRefreshFailureCount += 1
+    warnLog('그래프 가져오기 오류:', err)
+
+    if (graphRefreshFailureCount === 1) {
+      addLog(`그래프 자동 새로고침 실패: ${err.message}`)
+    }
+
+    if (graphRefreshFailureCount >= MAX_GRAPH_REFRESH_FAILURES) {
+      stopGraphPolling()
+      addLog(`그래프 자동 새로고침을 중단했습니다: ${err.message}`)
+    }
   }
 }
 
 const startPollingTask = (taskId) => {
+  stopPolling()
   pollTaskStatus(taskId)
   pollTimer = setInterval(() => pollTaskStatus(taskId), 2000)
 }
@@ -322,6 +346,7 @@ const pollTaskStatus = async (taskId) => {
   try {
     const res = await getTaskStatus(taskId)
     if (res.success) {
+      pollFailureCount = 0
       const task = res.data
       
       // Log progress message if it changed
@@ -345,12 +370,21 @@ const pollTaskStatus = async (taskId) => {
         }
       } else if (task.status === 'failed') {
         stopPolling()
+        stopGraphPolling()
         error.value = task.error
         addLog(`그래프 구축 작업 실패: ${task.error}`)
       }
     }
   } catch (e) {
-    console.error(e)
+    pollFailureCount += 1
+    errorLog('작업 상태 폴링 오류:', e)
+
+    if (pollFailureCount >= MAX_POLL_FAILURES) {
+      stopPolling()
+      stopGraphPolling()
+      error.value = `그래프 구축 상태를 연속으로 확인하지 못했습니다: ${e.message}`
+      addLog(error.value)
+    }
   }
 }
 
@@ -361,11 +395,17 @@ const loadGraph = async (graphId) => {
     const res = await getGraphData(graphId)
     if (res.success) {
       graphData.value = res.data
+      const nodeCount = res.data.node_count || res.data.nodes?.length || 0
+      const edgeCount = res.data.edge_count || res.data.edges?.length || 0
+      lastGraphRefreshSummary = `${nodeCount}:${edgeCount}`
+      error.value = ''
       addLog('그래프 데이터를 성공적으로 불러왔습니다.')
     } else {
+      error.value = res.error || '그래프 데이터를 불러오지 못했습니다.'
       addLog(`그래프 데이터 불러오기 실패: ${res.error}`)
     }
   } catch (e) {
+    error.value = e.message
     addLog(`그래프 불러오기 중 예외가 발생했습니다: ${e.message}`)
   } finally {
     graphLoading.value = false
@@ -411,7 +451,7 @@ onUnmounted(() => {
   flex-direction: column;
   background: #FFF;
   overflow: hidden;
-  font-family: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
+  font-family: 'Space Grotesk', 'Noto Sans KR', system-ui, sans-serif;
 }
 
 /* Header */

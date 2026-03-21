@@ -1,4 +1,21 @@
 import axios from 'axios'
+import { warnLog } from '../utils/logger'
+
+const createApiError = (message, sourceError = null, extras = {}) => {
+  const normalized = new Error(message || sourceError?.message || '알 수 없는 오류')
+
+  if (sourceError) {
+    normalized.cause = sourceError
+    normalized.code = sourceError.code
+    normalized.config = sourceError.config
+    normalized.request = sourceError.request
+    normalized.response = sourceError.response
+    normalized.status = sourceError.response?.status
+  }
+
+  Object.assign(normalized, extras)
+  return normalized
+}
 
 // Axios 인스턴스를 생성합니다.
 const service = axios.create({
@@ -15,8 +32,7 @@ service.interceptors.request.use(
     return config
   },
   error => {
-    console.error('요청 오류:', error)
-    return Promise.reject(error)
+    return Promise.reject(createApiError('요청을 준비하지 못했습니다', error))
   }
 )
 
@@ -27,34 +43,38 @@ service.interceptors.response.use(
 
     // 반환된 상태가 success가 아니면 오류를 발생시킵니다.
     if (!res.success && res.success !== undefined) {
-      console.error('API 오류:', res.error || res.message || '알 수 없는 오류')
-      return Promise.reject(new Error(res.error || res.message || '오류'))
+      const apiError = createApiError(
+        res.error || res.message || '오류',
+        null,
+        {
+          config: response.config,
+          response,
+          status: response.status,
+          data: res
+        }
+      )
+      return Promise.reject(apiError)
     }
 
     return res
   },
   error => {
-    console.error('응답 오류:', error)
-
     const backendMessage = error.response?.data?.error || error.response?.data?.message
     if (backendMessage) {
-      const apiError = new Error(backendMessage)
-      apiError.response = error.response
-      apiError.code = error.code
-      return Promise.reject(apiError)
+      return Promise.reject(createApiError(backendMessage, error))
     }
 
     // 타임아웃 처리
     if (error.code === 'ECONNABORTED' && error.message.includes('timeout')) {
-      console.error('요청 시간 초과')
+      return Promise.reject(createApiError('요청 시간이 초과되었습니다', error))
     }
 
     // 네트워크 오류 처리
     if (error.message === 'Network Error') {
-      console.error('네트워크 오류 - 연결 상태를 확인하세요')
+      return Promise.reject(createApiError('네트워크 오류 - 연결 상태를 확인하세요', error))
     }
 
-    return Promise.reject(error)
+    return Promise.reject(createApiError(error.message || '응답 처리 중 오류가 발생했습니다', error))
   }
 )
 
@@ -70,7 +90,7 @@ export const requestWithRetry = async (requestFn, maxRetries = 3, delay = 1000) 
 
       if (i === maxRetries - 1) throw error
 
-      console.warn(`요청 실패, 재시도 중 (${i + 1}/${maxRetries})...`)
+      warnLog(`요청 실패, 재시도 중 (${i + 1}/${maxRetries})...`, error)
       await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)))
     }
   }

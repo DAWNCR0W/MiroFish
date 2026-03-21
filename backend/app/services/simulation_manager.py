@@ -5,6 +5,7 @@ OASIS 시뮬레이션 관리자
 """
 
 import os
+import csv
 import json
 import shutil
 from typing import Dict, Any, List, Optional
@@ -15,6 +16,7 @@ from enum import Enum
 from ..utils.logger import get_logger
 from .graph_entity_reader import GraphEntityReader
 from .oasis_profile_generator import OasisProfileGenerator, OasisAgentProfile
+from .profile_localization import ProfileLocalizationService
 from .simulation_config_generator import SimulationConfigGenerator, SimulationParameters
 
 logger = get_logger('mirofish.simulation')
@@ -133,6 +135,7 @@ class SimulationManager:
 
         # 메모리 내 시뮬레이션 상태 캐시
         self._simulations: Dict[str, SimulationState] = {}
+        self.profile_localizer = ProfileLocalizationService()
 
     def _get_simulation_dir(self, simulation_id: str) -> str:
         """시뮬레이션 데이터 디렉터리 가져오기"""
@@ -446,9 +449,7 @@ class SimulationManager:
             return state
 
         except Exception as e:
-            logger.error(f"시뮬레이션 준비 실패: {simulation_id}, error={str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
+            logger.exception("시뮬레이션 준비 실패: simulation_id=%s", simulation_id)
             state.status = SimulationStatus.FAILED
             state.error = str(e)
             self._save_simulation_state(state)
@@ -483,8 +484,28 @@ class SimulationManager:
             raise ValueError(f"시뮬레이션이 존재하지 않습니다: {simulation_id}")
 
         sim_dir = self._get_simulation_dir(simulation_id)
-        profile_path = os.path.join(sim_dir, f"{platform}_profiles.json")
+        profiles = self._load_profiles_from_storage(sim_dir, platform)
+        return self.normalize_profiles_for_display(profiles, platform)
 
+    def normalize_profiles_for_display(
+        self,
+        profiles: List[Dict[str, Any]],
+        platform: str = "reddit",
+    ) -> List[Dict[str, Any]]:
+        """프런트 공통 표시 형식으로 맞추고 한국어 UI 기준으로 정리한다."""
+        return self.profile_localizer.adapt_and_localize_profiles(profiles, platform)
+
+    def _load_profiles_from_storage(self, sim_dir: str, platform: str) -> List[Dict[str, Any]]:
+        """저장 파일에서 프로필을 읽는다."""
+        if platform == "twitter":
+            profile_path = os.path.join(sim_dir, "twitter_profiles.csv")
+            if not os.path.exists(profile_path):
+                return []
+            with open(profile_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                return list(reader)
+
+        profile_path = os.path.join(sim_dir, "reddit_profiles.json")
         if not os.path.exists(profile_path):
             return []
 

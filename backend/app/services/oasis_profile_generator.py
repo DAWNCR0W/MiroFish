@@ -25,6 +25,7 @@ from ..utils.llm_client import (
 )
 from .graph_entity_reader import EntityNode
 from .graph_tools import GraphToolsService
+from .profile_localization import ProfileLocalizationService
 
 logger = get_logger('mirofish.oasis_profile')
 
@@ -165,8 +166,8 @@ class OasisProfileGenerator:
 
     # 일반적인 국가 목록
     COUNTRIES = [
-        "China", "US", "UK", "Japan", "Germany", "France",
-        "Canada", "Australia", "Brazil", "India", "South Korea"
+        "중국", "미국", "영국", "일본", "독일", "프랑스",
+        "캐나다", "호주", "브라질", "인도", "대한민국"
     ]
 
     # 개인 유형 엔티티(구체적 인물 설정 필요)
@@ -204,6 +205,11 @@ class OasisProfileGenerator:
 
         self.graph_id = graph_id
         self.graph_tools = GraphToolsService()
+        self.profile_localizer = ProfileLocalizationService(
+            api_key=self.api_key,
+            base_url=self.base_url,
+            model_name=self.model_name,
+        )
 
     def generate_profile_from_entity(
         self,
@@ -248,6 +254,8 @@ class OasisProfileGenerator:
                 entity_summary=entity.summary,
                 entity_attributes=entity.attributes
             )
+
+        profile_data = self.profile_localizer.localize_profile(profile_data)
 
         return OasisAgentProfile(
             user_id=user_id,
@@ -546,7 +554,7 @@ class OasisProfileGenerator:
                 import time
                 time.sleep(1 * (attempt + 1))  # 지수형 백오프
 
-        logger.warning(f"LLM 인물 설정 생성 실패({len(token_budgets)}회 시도): {last_error}, 규칙 기반 생성을 사용합니다")
+        logger.warning(f"LLM 인물 설정 생성 실패({max_attempts}회 시도): {last_error}, 규칙 기반 생성을 사용합니다")
         return self._generate_profile_rule_based(
             entity_name, entity_type, entity_summary, entity_attributes
         )
@@ -642,7 +650,13 @@ class OasisProfileGenerator:
 
     def _get_system_prompt(self, is_individual: bool) -> str:
         """시스템 프롬프트를 가져옵니다."""
-        base_prompt = "당신은 소셜 미디어 사용자 프로필 생성 전문가입니다. 여론 시뮬레이션에 사용할 상세하고 사실적인 인물 설정을 생성해 가능한 한 현실 상황을 그대로 재현하세요. 반드시 유효한 JSON 형식으로 반환해야 하며, 모든 문자열 값에는 이스케이프되지 않은 줄바꿈이 포함되면 안 됩니다. 중국어를 사용하세요."
+        base_prompt = (
+            "당신은 소셜 미디어 사용자 프로필 생성 전문가입니다. "
+            "여론 시뮬레이션에 사용할 상세하고 사실적인 인물 설정을 생성해 가능한 한 현실 상황을 그대로 재현하세요. "
+            "반드시 유효한 JSON 형식으로 반환해야 하며, 모든 문자열 값에는 이스케이프되지 않은 줄바꿈이 포함되면 안 됩니다. "
+            "모든 서술형 필드는 자연스러운 한국어로 작성하세요. "
+            "기업명, 기관명, 제품명, 종목 티커, MBTI, 사용자명 같은 고유명사는 원래 표기를 유지하세요."
+        )
         return base_prompt
 
     def _build_individual_persona_prompt(
@@ -682,14 +696,15 @@ class OasisProfileGenerator:
 3. age: 나이 숫자(정수여야 함)
 4. gender: 성별, 반드시 영어 "male" 또는 "female"
 5. mbti: MBTI 유형(예: INTJ, ENFP 등)
-6. country: 국가(중국어 사용, 예: "중국")
+6. country: 국가(한국어 사용, 예: "중국", "미국")
 7. profession: 직업
 8. interested_topics: 관심 주제 배열
 
 중요:
 - 모든 필드 값은 문자열 또는 숫자여야 하며, 줄바꿈을 사용하지 마세요
 - persona는 하나의 이어진 문장으로 작성해야 합니다
-- 중국어를 사용하세요(gender 필드만 영어 male/female 필수)
+- 모든 서술형 필드는 한국어로 작성하세요(gender 필드만 영어 male/female 필수)
+- 기업명, 기관명, 브랜드명, 종목 티커 같은 고유명사는 원래 표기를 유지하세요
 - 내용은 엔티티 정보와 일치해야 합니다
 - age는 유효한 정수여야 하며, gender는 반드시 "male" 또는 "female"이어야 합니다
 """
@@ -731,14 +746,15 @@ class OasisProfileGenerator:
 3. age: 고정값 30(기관 계정의 가상 나이)
 4. gender: 고정값 "other"(기관 계정은 other로 비개인 표시)
 5. mbti: MBTI 유형, 계정 스타일 설명용(예: ISTJ는 엄격하고 보수적)
-6. country: 국가(중국어 사용, 예: "중국")
+6. country: 국가(한국어 사용, 예: "중국", "미국")
 7. profession: 기관 기능 설명
 8. interested_topics: 관심 분야 배열
 
 중요:
 - 모든 필드 값은 문자열 또는 숫자여야 하며 null 값을 허용하지 않습니다
 - persona는 하나의 이어진 문장으로 작성하고 줄바꿈을 사용하지 마세요
-- 중국어를 사용하세요(gender 필드만 영어 "other" 필수)
+- 모든 서술형 필드는 한국어로 작성하세요(gender 필드만 영어 "other" 필수)
+- 기업명, 기관명, 브랜드명, 종목 티커 같은 고유명사는 원래 표기를 유지하세요
 - age는 정수 30이어야 하고, gender는 반드시 문자열 "other"여야 합니다
 - 기관 계정 발언은 해당 정체성에 맞아야 합니다"""
 
@@ -785,7 +801,7 @@ class OasisProfileGenerator:
                 "age": 30,  # 기관 가상 나이
                 "gender": "other",  # 기관 계정은 other 사용
                 "mbti": "ISTJ",  # 기관 스타일: 엄격하고 보수적
-                "country": "중국",
+                "country": "미상",
                 "profession": "미디어",
                 "interested_topics": ["일반 뉴스", "시사", "공공 사안"],
             }
@@ -797,7 +813,7 @@ class OasisProfileGenerator:
                 "age": 30,  # 기관 가상 나이
                 "gender": "other",  # 기관 계정은 other 사용
                 "mbti": "ISTJ",  # 기관 스타일: 엄격하고 보수적
-                "country": "중국",
+                "country": "미상",
                 "profession": entity_type,
                 "interested_topics": ["공공 정책", "커뮤니티", "공식 공지"],
             }
@@ -812,7 +828,7 @@ class OasisProfileGenerator:
                 "mbti": random.choice(self.MBTI_TYPES),
                 "country": random.choice(self.COUNTRIES),
                 "profession": entity_type,
-                "interested_topics": ["General", "Social Issues"],
+                "interested_topics": ["일반", "사회 이슈"],
             }
 
     def set_graph_id(self, graph_id: str):
@@ -918,9 +934,6 @@ class OasisProfileGenerator:
                 return idx, fallback_profile, str(e)
 
         logger.info(f"Agent 인물 설정 병렬 생성 시작: 총 {total}개, 병렬 수: {parallel_count}")
-        print(f"\n{'='*60}")
-        print(f"Agent 인물 설정 생성 시작 - 총 {total}개 엔티티, 병렬 수: {parallel_count}")
-        print(f"{'='*60}\n")
 
         # 스레드 풀로 병렬 실행
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel_count) as executor:
@@ -950,7 +963,7 @@ class OasisProfileGenerator:
                         progress_callback(
                             current,
                             total,
-                            f"완료 {current}/{total}: {entity.name}（{entity_type}）"
+                            f"완료 {current}/{total}: {entity.name} ({entity_type})"
                         )
 
                     if error:
@@ -974,9 +987,7 @@ class OasisProfileGenerator:
                     # 기본 인물 설정이어도 실시간 파일에 기록
                     save_profiles_realtime()
 
-        print(f"\n{'='*60}")
-        print(f"인물 설정 생성 완료! 총 {len([p for p in profiles if p])}개 Agent 생성")
-        print(f"{'='*60}\n")
+        logger.info("인물 설정 생성 완료: 총 %s개 Agent 생성", len([p for p in profiles if p]))
 
         return profiles
 
@@ -1008,8 +1019,7 @@ class OasisProfileGenerator:
 
         output = "\n".join(output_lines)
 
-        # 콘솔에만 출력(중복 방지, logger는 전체 내용을 다시 출력하지 않음)
-        print(output)
+        logger.debug(output)
 
     def save_profiles(
         self,
@@ -1096,12 +1106,17 @@ class OasisProfileGenerator:
 
         gender_lower = gender.lower().strip()
 
-        # 중국어 매핑
+        # 다국어 입력 매핑
         gender_map = {
             "남": "male",
+            "남성": "male",
+            "\u7537": "male",
             "여": "female",
+            "여성": "female",
+            "\u5973": "female",
             "기관": "other",
             "기타": "other",
+            "\u5176\u4ed6": "other",
             # 영어는 그대로
             "male": "male",
             "female": "female",
@@ -1143,7 +1158,7 @@ class OasisProfileGenerator:
                 "age": profile.age if profile.age else 30,
                 "gender": self._normalize_gender(profile.gender),
                 "mbti": profile.mbti if profile.mbti else "ISTJ",
-                "country": profile.country if profile.country else "중국",
+                "country": profile.country if profile.country else "미상",
             }
 
             # 선택 필드

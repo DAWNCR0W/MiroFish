@@ -43,6 +43,31 @@ def optimize_interview_prompt(prompt: str) -> str:
     return f"{INTERVIEW_PROMPT_PREFIX}{prompt}"
 
 
+def _runner_result_response(action: str, result: dict, *, failure_status: int = 409, **context):
+    """SimulationRunner 결과를 일관된 HTTP 응답으로 변환한다."""
+    success = bool(result.get("success", False))
+    if success:
+        return jsonify({
+            "success": True,
+            "data": result
+        })
+
+    context_summary = ", ".join(
+        f"{key}={value}" for key, value in context.items() if value is not None
+    ) or "no-context"
+    logger.warning(
+        "%s 실패: %s, error=%s",
+        action,
+        context_summary,
+        result.get("error") or result.get("message") or "알 수 없는 오류",
+    )
+    return jsonify({
+        "success": False,
+        "error": result.get("error") or result.get("message") or f"{action} 요청 처리에 실패했습니다.",
+        "data": result
+    }), failure_status
+
+
 # ============== 엔티티 읽기 인터페이스 ==============
 
 @simulation_bp.route('/entities/<graph_id>', methods=['GET'])
@@ -244,13 +269,33 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
     if not os.path.exists(simulation_dir):
         return False, {"reason": "시뮬레이션 디렉터리가 존재하지 않음"}
 
+    state_file = os.path.join(simulation_dir, "state.json")
+    if not os.path.exists(state_file):
+        return False, {
+            "reason": "필수 파일이 부족함",
+            "missing_files": ["state.json"],
+            "existing_files": []
+        }
+
+    try:
+        import json
+        with open(state_file, 'r', encoding='utf-8') as f:
+            state_data = json.load(f)
+    except Exception as e:
+        return False, {"reason": f"상태 파일 읽기 실패: {str(e)}"}
+
+    enable_twitter = state_data.get("enable_twitter", True)
+    enable_reddit = state_data.get("enable_reddit", True)
+
     # 필요한 파일 목록 (스크립트는 제외, backend/scripts/에 위치)
     required_files = [
         "state.json",
         "simulation_config.json",
-        "reddit_profiles.json",
-        "twitter_profiles.csv"
     ]
+    if enable_reddit:
+        required_files.append("reddit_profiles.json")
+    if enable_twitter:
+        required_files.append("twitter_profiles.csv")
 
     # 파일 존재 여부를 확인한다.
     existing_files = []
@@ -269,18 +314,18 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
             "existing_files": existing_files
         }
 
-    # state.json의 상태를 확인한다.
-    state_file = os.path.join(simulation_dir, "state.json")
     try:
-        import json
-        with open(state_file, 'r', encoding='utf-8') as f:
-            state_data = json.load(f)
-
         status = state_data.get("status", "")
         config_generated = state_data.get("config_generated", False)
 
-        # 상세 로그
-        logger.debug(f"시뮬레이션 준비 상태 확인: {simulation_id}, status={status}, config_generated={config_generated}")
+        logger.debug(
+            "시뮬레이션 준비 상태 확인: simulation_id=%s, status=%s, config_generated=%s, enable_twitter=%s, enable_reddit=%s",
+            simulation_id,
+            status,
+            config_generated,
+            enable_twitter,
+            enable_reddit,
+        )
 
         # config_generated=True이고 파일이 존재하면 준비 완료로 본다.
         # 다음 상태들도 준비 작업이 완료되었음을 의미한다.
@@ -292,15 +337,7 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         # - failed: 실행은 실패했지만 준비는 완료된 상태
         prepared_statuses = ["ready", "preparing", "running", "completed", "stopped", "failed"]
         if status in prepared_statuses and config_generated:
-            # 파일 통계 정보를 가져온다.
-            profiles_file = os.path.join(simulation_dir, "reddit_profiles.json")
-            config_file = os.path.join(simulation_dir, "simulation_config.json")
-
-            profiles_count = 0
-            if os.path.exists(profiles_file):
-                with open(profiles_file, 'r', encoding='utf-8') as f:
-                    profiles_data = json.load(f)
-                    profiles_count = len(profiles_data) if isinstance(profiles_data, list) else 0
+            profiles_count = state_data.get("profiles_count", 0)
 
             # 상태가 preparing이지만 파일이 이미 완성되었다면 상태를 ready로 자동 갱신한다.
             if status == "preparing":
@@ -315,7 +352,12 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
                 except Exception as e:
                     logger.warning(f"상태 자동 갱신 실패: {e}")
 
-            logger.info(f"시뮬레이션 {simulation_id} 확인 결과: 준비 완료 (status={status}, config_generated={config_generated})")
+            logger.debug(
+                "시뮬레이션 준비 완료: simulation_id=%s, status=%s, config_generated=%s",
+                simulation_id,
+                status,
+                config_generated,
+            )
             return True, {
                 "status": status,
                 "entities_count": state_data.get("entities_count", 0),
@@ -327,7 +369,12 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
                 "existing_files": existing_files
             }
         else:
-            logger.warning(f"시뮬레이션 {simulation_id} 확인 결과: 준비되지 않음 (status={status}, config_generated={config_generated})")
+            logger.debug(
+                "시뮬레이션 준비 미완료: simulation_id=%s, status=%s, config_generated=%s",
+                simulation_id,
+                status,
+                config_generated,
+            )
             return False, {
                 "reason": f"상태가 준비 완료 목록에 없거나 config_generated가 false임: status={status}, config_generated={config_generated}",
                 "status": status,
@@ -1041,6 +1088,9 @@ def get_simulation_profiles_realtime(simulation_id: str):
                 logger.warning(f"profiles 파일 읽기 실패 (아직 쓰는 중일 수 있음): {e}")
                 profiles = []
 
+        manager = SimulationManager()
+        profiles = manager.normalize_profiles_for_display(profiles, platform)
+
         # 생성 중인지 확인한다. (state.json 기준)
         is_generating = False
         total_expected = None
@@ -1621,7 +1671,7 @@ def stop_simulation():
         manager = SimulationManager()
         state = manager.get_simulation(simulation_id)
         if state:
-            state.status = SimulationStatus.PAUSED
+            state.status = SimulationStatus.STOPPED
             manager._save_simulation_state(state)
 
         return jsonify({
@@ -1636,7 +1686,7 @@ def stop_simulation():
         }), 400
 
     except Exception as e:
-        logger.error(f"시뮬레이션 중지 실패: {str(e)}")
+        logger.exception("시뮬레이션 중지 실패")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -2186,10 +2236,13 @@ def interview_agent():
             timeout=timeout
         )
 
-        return jsonify({
-            "success": result.get("success", False),
-            "data": result
-        })
+        return _runner_result_response(
+            "Interview",
+            result,
+            simulation_id=simulation_id,
+            agent_id=agent_id,
+            platform=platform,
+        )
 
     except ValueError as e:
         return jsonify({
@@ -2324,10 +2377,12 @@ def interview_agents_batch():
             timeout=timeout
         )
 
-        return jsonify({
-            "success": result.get("success", False),
-            "data": result
-        })
+        return _runner_result_response(
+            "일괄 Interview",
+            result,
+            simulation_id=simulation_id,
+            platform=platform,
+        )
 
     except ValueError as e:
         return jsonify({
@@ -2427,10 +2482,12 @@ def interview_all_agents():
             timeout=timeout
         )
 
-        return jsonify({
-            "success": result.get("success", False),
-            "data": result
-        })
+        return _runner_result_response(
+            "전체 Interview",
+            result,
+            simulation_id=simulation_id,
+            platform=platform,
+        )
 
     except ValueError as e:
         return jsonify({
@@ -2560,6 +2617,14 @@ def get_env_status():
                 "error": "simulation_id를 제공해 주세요"
             }), 400
 
+        manager = SimulationManager()
+        state = manager.get_simulation(simulation_id)
+        if not state:
+            return jsonify({
+                "success": False,
+                "error": f"시뮬레이션이 존재하지 않음: {simulation_id}"
+            }), 404
+
         env_alive = SimulationRunner.check_env_alive(simulation_id)
 
         # 더 자세한 상태 정보를 가져온다.
@@ -2633,15 +2698,22 @@ def close_simulation_env():
             timeout=timeout
         )
 
-        # 시뮬레이션 상태를 갱신한다.
+        if not result.get("success", False):
+            return _runner_result_response(
+                "환경 종료",
+                result,
+                simulation_id=simulation_id,
+                failure_status=409,
+            )
+
         manager = SimulationManager()
         state = manager.get_simulation(simulation_id)
-        if state:
+        if state and result.get("confirmed", result.get("success", False)):
             state.status = SimulationStatus.COMPLETED
             manager._save_simulation_state(state)
 
         return jsonify({
-            "success": result.get("success", False),
+            "success": True,
             "data": result
         })
 
@@ -2652,7 +2724,7 @@ def close_simulation_env():
         }), 400
 
     except Exception as e:
-        logger.error(f"환경 닫기 실패: {str(e)}")
+        logger.exception("환경 닫기 실패")
         return jsonify({
             "success": False,
             "error": str(e),

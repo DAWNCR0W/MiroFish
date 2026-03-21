@@ -227,11 +227,12 @@ def _parse_json_from_content(content: Optional[str]) -> Dict[str, Any]:
 
     try:
         return json.loads(cleaned)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
         json_match = re.search(r'\{[\s\S]*\}', cleaned)
         if json_match:
             return json.loads(json_match.group(0))
-        raise ValueError(f"LLM 응답의 JSON 형식이 유효하지 않음: {cleaned}")
+        logger.debug("LLM JSON 파싱 실패, 원문 미리보기=%s", cleaned[:200])
+        raise ValueError("LLM 응답의 JSON 형식이 유효하지 않음") from exc
 
 
 class LLMClient:
@@ -353,20 +354,35 @@ class LLMClient:
         base_url: str,
         model: str,
     ) -> Optional[int]:
-        for endpoint in cls._candidate_model_metadata_endpoints(base_url):
+        endpoints = cls._candidate_model_metadata_endpoints(base_url)
+        failed_endpoints = []
+
+        for endpoint in endpoints:
             try:
                 payload = cls._fetch_json(
                     endpoint,
                     api_key=api_key,
                     timeout=Config.LLM_CAPABILITY_REQUEST_TIMEOUT,
                 )
-            except Exception:
+            except Exception as exc:
+                failed_endpoints.append(endpoint)
+                logger.debug(
+                    "LLM 서버 메타데이터 조회 실패: endpoint=%s, error=%s",
+                    endpoint,
+                    exc,
+                )
                 continue
 
             detected = cls._extract_parallel_from_payload(payload, model=model)
             if detected:
                 logger.info("LLM 서버 메타데이터에서 병렬 설정을 감지함: endpoint=%s, parallel=%s", endpoint, detected)
                 return detected
+
+        if failed_endpoints and len(failed_endpoints) == len(endpoints):
+            logger.warning(
+                "LLM 서버 메타데이터 조회에 모두 실패해 fallback 병렬 설정을 사용합니다: base_url=%s",
+                base_url,
+            )
 
         return None
 
@@ -664,8 +680,13 @@ class LLMClient:
                     )
                     continue
 
+                logger.debug(
+                    "LLM JSON 응답 파싱 실패: finish_reason=%s, preview=%s",
+                    finish_reason,
+                    preview,
+                )
                 raise ValueError(
-                    f"LLM 응답의 JSON 형식이 유효하지 않음 (finish_reason={finish_reason}, preview={preview})"
+                    f"LLM 응답의 JSON 형식이 유효하지 않음 (finish_reason={finish_reason})"
                 ) from exc
 
         raise ValueError(str(last_error or "LLM 응답의 JSON 형식이 유효하지 않음"))

@@ -4,7 +4,6 @@
 """
 
 import os
-import traceback
 import threading
 from flask import request, jsonify
 
@@ -20,7 +19,7 @@ from ..models.task import TaskManager, TaskStatus
 from ..models.project import ProjectManager, ProjectStatus
 
 # 로거를 가져온다
-logger = get_logger('mirofish.api')
+logger = get_logger('mirofish.api.graph')
 
 _project_build_locks = {}
 _project_build_locks_guard = threading.Lock()
@@ -45,6 +44,22 @@ def _coerce_bool(value, default: bool = False) -> bool:
         if normalized in {"0", "false", "no", "off"}:
             return False
     return bool(value)
+
+
+def _update_project_for_build_task(project_id: str, task_id: str, **changes):
+    """현재 빌드 작업에 해당하는 최신 프로젝트 상태만 갱신한다."""
+    with _build_lock_for(project_id):
+        project = ProjectManager.get_project(project_id)
+        if not project:
+            return None
+        if project.graph_build_task_id != task_id:
+            return project
+
+        for key, value in changes.items():
+            setattr(project, key, value)
+
+        ProjectManager.save_project(project)
+        return project
 
 
 def allowed_file(filename: str) -> bool:
@@ -278,12 +293,10 @@ def generate_ontology():
         })
 
     except Exception as e:
-        logger.error("온톨로지 정의 생성 실패: %s", str(e))
-        logger.error(traceback.format_exc())
+        logger.exception("온톨로지 정의 생성 실패")
         return jsonify({
             "success": False,
             "error": str(e),
-            "traceback": traceback.format_exc()
         }), 500
 
 
@@ -473,8 +486,7 @@ def build_graph():
                 graph_id = builder.create_graph(name=graph_name)
 
                 # 프로젝트의 graph_id를 갱신한다.
-                project.graph_id = graph_id
-                ProjectManager.save_project(project)
+                _update_project_for_build_task(project_id, task_id, graph_id=graph_id)
 
                 # 온톨로지를 설정한다.
                 task_manager.update_task(
@@ -506,6 +518,7 @@ def build_graph():
                     progress_callback=add_progress_callback,
                     parallel_workers=parallel_workers,
                 )
+                batch_report = builder.get_last_batch_report()
 
                 # 로컬 추출이 완료될 때까지 기다린다. (각 episode의 processed 상태 확인)
                 task_manager.update_task(
@@ -533,18 +546,37 @@ def build_graph():
                 graph_data = builder.get_graph_data(graph_id)
 
                 # 프로젝트 상태를 갱신한다.
-                project.status = ProjectStatus.GRAPH_COMPLETED
-                ProjectManager.save_project(project)
+                _update_project_for_build_task(
+                    project_id,
+                    task_id,
+                    status=ProjectStatus.GRAPH_COMPLETED,
+                    error=None,
+                )
 
                 node_count = graph_data.get("node_count", 0)
                 edge_count = graph_data.get("edge_count", 0)
-                build_logger.info(f"[{task_id}] 그래프 구성 완료: graph_id={graph_id}, 노드={node_count}, 엣지={edge_count}")
+                failed_chunk_count = batch_report.get("failed_chunk_count", 0)
+                if failed_chunk_count:
+                    build_logger.warning(
+                        "[%s] 그래프 구성 부분 완료: graph_id=%s, 노드=%s, 엣지=%s, failed_chunks=%s",
+                        task_id,
+                        graph_id,
+                        node_count,
+                        edge_count,
+                        failed_chunk_count,
+                    )
+                else:
+                    build_logger.info(f"[{task_id}] 그래프 구성 완료: graph_id={graph_id}, 노드={node_count}, 엣지={edge_count}")
 
                 # 완료 처리
                 task_manager.update_task(
                     task_id,
                     status=TaskStatus.COMPLETED,
-                    message="그래프 구성 완료",
+                    message=(
+                        f"그래프 구성 완료 ({failed_chunk_count}개 청크 건너뜀)"
+                        if failed_chunk_count
+                        else "그래프 구성 완료"
+                    ),
                     progress=100,
                     result={
                         "project_id": project_id,
@@ -552,6 +584,8 @@ def build_graph():
                         "node_count": node_count,
                         "edge_count": edge_count,
                         "chunk_count": total_chunks,
+                        "succeeded_chunks": batch_report.get("succeeded_chunks", 0),
+                        "failed_chunk_count": failed_chunk_count,
                         "batch_size": batch_size,
                         "parallel_workers": parallel_workers,
                         "parallel_source": parallel_source,
@@ -560,18 +594,20 @@ def build_graph():
 
             except Exception as e:
                 # 프로젝트 상태를 실패로 갱신한다.
-                build_logger.error(f"[{task_id}] 그래프 구성 실패: {str(e)}")
-                build_logger.debug(traceback.format_exc())
+                build_logger.exception("[%s] 그래프 구성 실패", task_id)
 
-                project.status = ProjectStatus.FAILED
-                project.error = str(e)
-                ProjectManager.save_project(project)
+                _update_project_for_build_task(
+                    project_id,
+                    task_id,
+                    status=ProjectStatus.FAILED,
+                    error=str(e),
+                )
 
                 task_manager.update_task(
                     task_id,
                     status=TaskStatus.FAILED,
                     message=f"구성 실패: {str(e)}",
-                    error=traceback.format_exc()
+                    error=str(e)
                 )
 
         # 백그라운드 스레드를 시작한다.
@@ -588,10 +624,10 @@ def build_graph():
         })
 
     except Exception as e:
+        logger.exception("그래프 구성 작업 시작 실패")
         return jsonify({
             "success": False,
             "error": str(e),
-            "traceback": traceback.format_exc()
         }), 500
 
 
@@ -640,11 +676,18 @@ def get_graph_data(graph_id: str):
             "data": graph_data
         })
 
-    except Exception as e:
+    except FileNotFoundError as e:
+        logger.warning("그래프 데이터 조회 실패(없음): graph_id=%s", graph_id)
         return jsonify({
             "success": False,
             "error": str(e),
-            "traceback": traceback.format_exc()
+        }), 404
+
+    except Exception as e:
+        logger.exception("그래프 데이터 조회 실패: graph_id=%s", graph_id)
+        return jsonify({
+            "success": False,
+            "error": str(e),
         }), 500
 
 
@@ -668,11 +711,18 @@ def dedupe_graph(graph_id: str):
             "data": payload,
         })
 
-    except Exception as e:
+    except FileNotFoundError as e:
+        logger.warning("그래프 엔티티 중복 제거 실패(없음): graph_id=%s", graph_id)
         return jsonify({
             "success": False,
             "error": str(e),
-            "traceback": traceback.format_exc()
+        }), 404
+
+    except Exception as e:
+        logger.exception("그래프 엔티티 중복 제거 실패: graph_id=%s", graph_id)
+        return jsonify({
+            "success": False,
+            "error": str(e),
         }), 500
 
 
@@ -689,8 +739,8 @@ def delete_graph(graph_id: str):
         })
 
     except Exception as e:
+        logger.exception("그래프 삭제 실패: graph_id=%s", graph_id)
         return jsonify({
             "success": False,
             "error": str(e),
-            "traceback": traceback.format_exc()
         }), 500

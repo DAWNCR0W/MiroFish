@@ -12,6 +12,25 @@ from ..utils.logger import get_logger
 logger = get_logger('mirofish.retry')
 
 
+def _run_retry_callback_safely(
+    callback: Optional[Callable[[Exception, int], None]],
+    error: Exception,
+    retry_count: int,
+):
+    """관측용 콜백 실패가 원래 재시도 흐름을 깨지 않게 막는다."""
+    if not callback:
+        return
+
+    try:
+        callback(error, retry_count)
+    except Exception as callback_error:
+        logger.warning(
+            "on_retry 콜백 실행 실패: retry_count=%s, error=%s",
+            retry_count,
+            callback_error,
+        )
+
+
 def retry_with_backoff(
     max_retries: int = 3,
     initial_delay: float = 1.0,
@@ -65,8 +84,7 @@ def retry_with_backoff(
                         f"{current_delay:.1f}초 후 재시도..."
                     )
                     
-                    if on_retry:
-                        on_retry(e, attempt + 1)
+                    _run_retry_callback_safely(on_retry, e, attempt + 1)
                     
                     time.sleep(current_delay)
                     delay *= backoff_factor
@@ -117,8 +135,7 @@ def retry_with_backoff_async(
                         f"{current_delay:.1f}초 후 재시도..."
                     )
                     
-                    if on_retry:
-                        on_retry(e, attempt + 1)
+                    _run_retry_callback_safely(on_retry, e, attempt + 1)
                     
                     await asyncio.sleep(current_delay)
                     delay *= backoff_factor
