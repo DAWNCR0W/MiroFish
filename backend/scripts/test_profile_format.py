@@ -38,7 +38,7 @@ def test_profile_formats():
             age=25,
             gender="male",
             mbti="INTJ",
-            country="China",
+            country="South Korea",
             profession="Student",
             interested_topics=["Technology", "Education"],
             source_entity_uuid="test-uuid-123",
@@ -162,4 +162,3 @@ def show_expected_formats():
 if __name__ == "__main__":
     test_profile_formats()
     show_expected_formats()
-

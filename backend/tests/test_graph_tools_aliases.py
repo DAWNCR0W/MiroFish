@@ -25,10 +25,10 @@ def test_get_entity_summary_matches_alias(monkeypatch, tmp_path):
             "nodes": [
                 {
                     "uuid": "node-1",
-                    "name": "Wuhan University",
-                    "aliases": ["우한대학교", "\u6b66\u6c49\u5927\u5b66"],
+                    "name": "Korea University",
+                    "aliases": ["고려대학교", "高麗大學校"],
                     "labels": ["Entity", "Organization"],
-                    "summary": "중국 우한의 주요 대학",
+                    "summary": "대한민국 서울의 주요 대학",
                     "attributes": {},
                 }
             ],
@@ -37,11 +37,11 @@ def test_get_entity_summary_matches_alias(monkeypatch, tmp_path):
     )
 
     service = GraphToolsService()
-    result = service.get_entity_summary(graph_id, "우한대학교")
+    result = service.get_entity_summary(graph_id, "고려대학교")
 
     assert result["entity_info"] is not None
-    assert result["entity_info"]["name"] == "Wuhan University"
-    assert set(result["entity_info"]["aliases"]) == {"우한대학교", "\u6b66\u6c49\u5927\u5b66"}
+    assert result["entity_info"]["name"] == "Korea University"
+    assert set(result["entity_info"]["aliases"]) == {"고려대학교", "高麗大學校"}
 
 
 def test_insight_forge_handles_edges_with_missing_node_records(monkeypatch, tmp_path):
@@ -58,7 +58,7 @@ def test_insight_forge_handles_edges_with_missing_node_records(monkeypatch, tmp_
                 {
                     "uuid": "edge-1",
                     "name": "RESPONDS_TO",
-                    "fact": "우한대학교는 사건에 대응했다",
+                    "fact": "고려대학교는 사건에 대응했다",
                     "source_node_uuid": "missing-source",
                     "target_node_uuid": "missing-target",
                     "attributes": {},

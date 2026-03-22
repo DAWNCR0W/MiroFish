@@ -166,8 +166,8 @@ class OasisProfileGenerator:
 
     # 일반적인 국가 목록
     COUNTRIES = [
-        "중국", "미국", "영국", "일본", "독일", "프랑스",
-        "캐나다", "호주", "브라질", "인도", "대한민국"
+        "대한민국", "미국", "영국", "일본", "독일", "프랑스",
+        "캐나다", "호주", "브라질", "인도"
     ]
 
     # 개인 유형 엔티티(구체적 인물 설정 필요)
@@ -696,7 +696,7 @@ class OasisProfileGenerator:
 3. age: 나이 숫자(정수여야 함)
 4. gender: 성별, 반드시 영어 "male" 또는 "female"
 5. mbti: MBTI 유형(예: INTJ, ENFP 등)
-6. country: 국가(한국어 사용, 예: "중국", "미국")
+6. country: 국가(한국어 사용, 예: "대한민국", "미국")
 7. profession: 직업
 8. interested_topics: 관심 주제 배열
 
@@ -746,7 +746,7 @@ class OasisProfileGenerator:
 3. age: 고정값 30(기관 계정의 가상 나이)
 4. gender: 고정값 "other"(기관 계정은 other로 비개인 표시)
 5. mbti: MBTI 유형, 계정 스타일 설명용(예: ISTJ는 엄격하고 보수적)
-6. country: 국가(한국어 사용, 예: "중국", "미국")
+6. country: 국가(한국어 사용, 예: "대한민국", "미국")
 7. profession: 기관 기능 설명
 8. interested_topics: 관심 분야 배열
 

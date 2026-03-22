@@ -26,10 +26,10 @@ def test_find_node_by_name_matches_alias(monkeypatch, tmp_path):
         {
             "entities": [
                 {
-                    "name": "Wuhan University",
+                    "name": "Korea University",
                     "type": "Organization",
-                    "aliases": ["\u6b66\u6c49\u5927\u5b66", "우한대학교"],
-                    "summary": "중국 우한의 주요 대학",
+                    "aliases": ["高麗大學校", "고려대학교"],
+                    "summary": "대한민국 서울의 주요 대학",
                     "attributes": {},
                 }
             ],
@@ -38,11 +38,11 @@ def test_find_node_by_name_matches_alias(monkeypatch, tmp_path):
         },
     )
 
-    matched = store.find_node_by_name(graph_id, "우한대학교", "Organization")
+    matched = store.find_node_by_name(graph_id, "고려대학교", "Organization")
 
     assert matched is not None
-    assert matched["name"] == "Wuhan University"
-    assert set(matched.get("aliases", [])) == {"\u6b66\u6c49\u5927\u5b66", "우한대학교"}
+    assert matched["name"] == "Korea University"
+    assert set(matched.get("aliases", [])) == {"高麗大學校", "고려대학교"}
 
 
 def test_apply_extraction_merges_multilingual_alias_entities(monkeypatch, tmp_path):
@@ -55,10 +55,10 @@ def test_apply_extraction_merges_multilingual_alias_entities(monkeypatch, tmp_pa
         {
             "entities": [
                 {
-                    "name": "Wuhan University",
+                    "name": "Korea University",
                     "type": "Organization",
-                    "aliases": ["\u6b66\u6c49\u5927\u5b66"],
-                    "summary": "중국 우한의 주요 대학",
+                    "aliases": ["高麗大學校"],
+                    "summary": "대한민국 서울의 주요 대학",
                     "attributes": {},
                 }
             ],
@@ -74,10 +74,10 @@ def test_apply_extraction_merges_multilingual_alias_entities(monkeypatch, tmp_pa
         {
             "entities": [
                 {
-                    "name": "우한대학교",
+                    "name": "고려대학교",
                     "type": "Organization",
-                    "aliases": ["Wuhan University"],
-                    "summary": "우한에 있는 대학",
+                    "aliases": ["Korea University"],
+                    "summary": "서울에 있는 대학",
                     "attributes": {},
                 }
             ],
@@ -89,8 +89,8 @@ def test_apply_extraction_merges_multilingual_alias_entities(monkeypatch, tmp_pa
     graph = store.get_graph(graph_id)
 
     assert len(graph["nodes"]) == 1
-    assert graph["nodes"][0]["name"] == "Wuhan University"
-    assert set(graph["nodes"][0].get("aliases", [])) == {"\u6b66\u6c49\u5927\u5b66", "우한대학교"}
+    assert graph["nodes"][0]["name"] == "Korea University"
+    assert set(graph["nodes"][0].get("aliases", [])) == {"高麗大學校", "고려대학교"}
 
 
 def test_merge_nodes_redirects_edges_and_preserves_aliases(monkeypatch, tmp_path):
@@ -102,7 +102,7 @@ def test_merge_nodes_redirects_edges_and_preserves_aliases(monkeypatch, tmp_path
         "ep1",
         {
             "entities": [
-                {"name": "Wuhan University", "type": "Organization", "summary": "", "attributes": {}},
+                {"name": "Korea University", "type": "Organization", "summary": "", "attributes": {}},
                 {"name": "Student A", "type": "Person", "summary": "", "attributes": {}},
             ],
             "relationships": [
@@ -110,9 +110,9 @@ def test_merge_nodes_redirects_edges_and_preserves_aliases(monkeypatch, tmp_path
                     "type": "AFFILIATED_WITH",
                     "source_name": "Student A",
                     "source_type": "Person",
-                    "target_name": "Wuhan University",
+                    "target_name": "Korea University",
                     "target_type": "Organization",
-                    "fact": "Student A는 Wuhan University와 관련이 있다",
+                    "fact": "Student A는 Korea University와 관련이 있다",
                     "attributes": {},
                 }
             ],
@@ -126,7 +126,7 @@ def test_merge_nodes_redirects_edges_and_preserves_aliases(monkeypatch, tmp_path
         "ep2",
         {
             "entities": [
-                {"name": "우한대학교", "type": "Organization", "summary": "", "attributes": {}},
+                {"name": "고려대학교", "type": "Organization", "summary": "", "attributes": {}},
                 {"name": "Student A", "type": "Person", "summary": "", "attributes": {}},
             ],
             "relationships": [
@@ -134,9 +134,9 @@ def test_merge_nodes_redirects_edges_and_preserves_aliases(monkeypatch, tmp_path
                     "type": "AFFILIATED_WITH",
                     "source_name": "Student A",
                     "source_type": "Person",
-                    "target_name": "우한대학교",
+                    "target_name": "고려대학교",
                     "target_type": "Organization",
-                    "fact": "Student A는 Wuhan University와 관련이 있다",
+                    "fact": "Student A는 Korea University와 관련이 있다",
                     "attributes": {},
                 }
             ],
@@ -148,10 +148,10 @@ def test_merge_nodes_redirects_edges_and_preserves_aliases(monkeypatch, tmp_path
     graph_before["edges"][0]["invalid_at"] = "2026-03-01T00:00:00"
     store._write_graph(graph_id, graph_before)
     graph_before = store.get_graph(graph_id)
-    wuhan_uuid = next(node["uuid"] for node in graph_before["nodes"] if node["name"] == "Wuhan University")
-    korean_uuid = next(node["uuid"] for node in graph_before["nodes"] if node["name"] == "우한대학교")
+    canonical_uuid = next(node["uuid"] for node in graph_before["nodes"] if node["name"] == "Korea University")
+    localized_uuid = next(node["uuid"] for node in graph_before["nodes"] if node["name"] == "고려대학교")
 
-    result = store.merge_nodes(graph_id, wuhan_uuid, [korean_uuid])
+    result = store.merge_nodes(graph_id, canonical_uuid, [localized_uuid])
     graph_after = store.get_graph(graph_id)
 
     assert result["merged_count"] == 1
@@ -159,9 +159,9 @@ def test_merge_nodes_redirects_edges_and_preserves_aliases(monkeypatch, tmp_path
     assert len(graph_after["nodes"]) == 2
     assert len(graph_after["edges"]) == 1
 
-    merged = next(node for node in graph_after["nodes"] if node["uuid"] == wuhan_uuid)
-    assert "우한대학교" in merged.get("aliases", [])
-    assert graph_after["edges"][0]["target_node_uuid"] == wuhan_uuid
+    merged = next(node for node in graph_after["nodes"] if node["uuid"] == canonical_uuid)
+    assert "고려대학교" in merged.get("aliases", [])
+    assert graph_after["edges"][0]["target_node_uuid"] == canonical_uuid
     assert graph_after["edges"][0]["invalid_at"] is None
 
 
@@ -186,9 +186,9 @@ def test_graph_entity_deduper_merges_existing_multilingual_nodes(monkeypatch, tm
         {
             "entities": [
                 {
-                    "name": "Wuhan University",
+                    "name": "Korea University",
                     "type": "Organization",
-                    "summary": "중국 우한의 대학",
+                    "summary": "대한민국 서울의 대학",
                     "attributes": {},
                 }
             ],
@@ -204,9 +204,9 @@ def test_graph_entity_deduper_merges_existing_multilingual_nodes(monkeypatch, tm
         {
             "entities": [
                 {
-                    "name": "우한대학교",
+                    "name": "고려대학교",
                     "type": "Organization",
-                    "summary": "우한에 있는 대학",
+                    "summary": "서울에 있는 대학",
                     "attributes": {},
                 }
             ],
@@ -228,4 +228,4 @@ def test_graph_entity_deduper_merges_existing_multilingual_nodes(monkeypatch, tm
     assert result["merged_group_count"] == 1
     assert result["merged_node_count"] == 1
     assert len(merged_graph["nodes"]) == 1
-    assert set(merged_graph["nodes"][0].get("aliases", [])) == {"우한대학교"}
+    assert set(merged_graph["nodes"][0].get("aliases", [])) == {"고려대학교"}

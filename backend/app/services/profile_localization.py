@@ -27,6 +27,7 @@ class ProfileLocalizationService:
     IDEOGRAPH_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
     TRANSLATABLE_FIELDS = ("bio", "persona", "profession", "country")
     TRANSLATION_BATCH_SIZE = 3
+    TRANSLATION_INDEX_FIELD = "_translation_index"
     _translation_cache: Dict[str, Dict[str, Any]] = {}
 
     COUNTRY_MAP = {
@@ -276,6 +277,69 @@ class ProfileLocalizationService:
             "interested_topics": profile.get("interested_topics", []),
         }
 
+    def _coerce_translation_index(self, value: Any, payload_count: int) -> Optional[int]:
+        if isinstance(value, bool):
+            return None
+
+        if isinstance(value, int):
+            index = value
+        elif isinstance(value, str) and value.strip().isdigit():
+            index = int(value.strip())
+        else:
+            return None
+
+        if 0 <= index < payload_count:
+            return index
+        return None
+
+    def _strip_translation_metadata(self, translated: Dict[str, Any]) -> Dict[str, Any]:
+        cleaned = dict(translated)
+        cleaned.pop(self.TRANSLATION_INDEX_FIELD, None)
+        return cleaned
+
+    def _align_translated_profiles(
+        self,
+        translated_profiles: Any,
+        payload_count: int,
+    ) -> List[Dict[str, Any]]:
+        if not isinstance(translated_profiles, list):
+            raise ValueError("번역 응답에 profiles 배열이 없습니다")
+
+        if (
+            len(translated_profiles) == payload_count
+            and all(
+                isinstance(item, dict) and self.TRANSLATION_INDEX_FIELD not in item
+                for item in translated_profiles
+            )
+        ):
+            return [self._strip_translation_metadata(item) for item in translated_profiles]
+
+        aligned: List[Optional[Dict[str, Any]]] = [None] * payload_count
+        for item in translated_profiles:
+            if not isinstance(item, dict):
+                raise ValueError("번역된 profile 항목 형식이 올바르지 않습니다")
+
+            raw_index = item.get(self.TRANSLATION_INDEX_FIELD)
+            index = self._coerce_translation_index(raw_index, payload_count)
+            if index is None:
+                raise ValueError(
+                    f"번역된 profile 항목의 {self.TRANSLATION_INDEX_FIELD} 값이 올바르지 않습니다: {raw_index!r}"
+                )
+            if aligned[index] is not None:
+                raise ValueError(f"번역된 profile 항목의 {self.TRANSLATION_INDEX_FIELD} 값이 중복되었습니다: {index}")
+
+            aligned[index] = self._strip_translation_metadata(item)
+
+        missing_indices = [str(index) for index, item in enumerate(aligned) if item is None]
+        if missing_indices:
+            missing_preview = ", ".join(missing_indices[:5])
+            raise ValueError(
+                "번역된 profiles 배열 길이가 입력과 다릅니다: "
+                f"input={payload_count}, output={len(translated_profiles)}, missing_indices=[{missing_preview}]"
+            )
+
+        return [item for item in aligned if item is not None]
+
     def _merge_translated_fields(
         self,
         profile: Dict[str, Any],
@@ -307,13 +371,21 @@ class ProfileLocalizationService:
         if not payloads or not self.client:
             return None
 
+        request_payloads = []
+        for index, payload in enumerate(payloads):
+            request_payload = dict(payload)
+            request_payload[self.TRANSLATION_INDEX_FIELD] = index
+            request_payloads.append(request_payload)
+
         system_prompt = (
             "당신은 한국어 UI 현지화 편집자입니다. "
             "입력으로 들어온 소셜 프로필 JSON 배열을 자연스러운 한국어로 번역하세요. "
             "고유명사, 사용자명, MBTI, 영문 약어는 문맥상 필요한 경우만 번역하고 가능한 한 유지하세요. "
-            "배열 길이와 객체 순서를 유지하고, 반드시 JSON만 반환하세요."
+            f"각 객체의 {self.TRANSLATION_INDEX_FIELD} 정수값은 번역하지 말고 그대로 유지하세요. "
+            "모든 입력 객체에 대해 정확히 하나의 출력 객체를 반환하세요. "
+            "반드시 JSON만 반환하세요."
         )
-        user_prompt = json.dumps({"profiles": payloads}, ensure_ascii=False)
+        user_prompt = json.dumps({"profiles": request_payloads}, ensure_ascii=False)
 
         try:
             response = create_chat_completion_with_fallback(
@@ -330,9 +402,7 @@ class ProfileLocalizationService:
             content = extract_structured_response_text(response.choices[0].message)
             data = json.loads(content)
             translated_profiles = data.get("profiles")
-            if not isinstance(translated_profiles, list) or len(translated_profiles) != len(payloads):
-                raise ValueError("번역된 profiles 배열 길이가 입력과 다릅니다")
-            return translated_profiles
+            return self._align_translated_profiles(translated_profiles, len(payloads))
         except Exception as error:
             logger.warning("프로필 한국어 현지화 번역에 실패했습니다: %s", error)
             return None

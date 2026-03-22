@@ -31,8 +31,8 @@ class DummyGraphTools:
                 },
             },
             "entities": [
-                {"name": "\u6b66\u6c49\u5927\u5b66", "type": "Organization", "summary": "브랜드 평판 위기를 겪는 대학"},
-                {"name": "\u8f9b\u67d0", "type": "Person", "summary": "사건의 핵심 당사자"},
+                {"name": "고려대학교", "type": "Organization", "summary": "브랜드 평판 위기를 겪는 대학"},
+                {"name": "김모", "type": "Person", "summary": "사건의 핵심 당사자"},
             ],
             "total_entities": 11,
         }
@@ -42,7 +42,7 @@ def test_plan_outline_falls_back_when_llm_returns_empty_sections():
     agent = ReportAgent(
         graph_id="graph_test",
         simulation_id="sim_test",
-        simulation_requirement="우한대학 공고 이후 여론 반응 예측",
+        simulation_requirement="대학 공고 이후 여론 반응 예측",
         llm_client=DummyOutlineLLM({
             "title": "빈 개요",
             "summary": "",

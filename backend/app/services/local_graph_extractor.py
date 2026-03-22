@@ -263,7 +263,7 @@ class LocalGraphExtractor:
 9. known entities에 이미 있는 이름이 보이면 그 엔티티를 재사용하고, 관계도 그 이름을 기준으로 연결한다
 10. 텍스트에 명시적인 소속, 보도, 대응, 지지, 반대, 협력 관계가 있으면 relationships를 비우지 말고 최소 1개 이상 추출한다
 11. 서로 다른 언어/문자 표기라도 같은 실제 엔티티면 새 엔티티를 만들지 말고 기존 엔티티의 name을 재사용한다
-12. 다른 언어 표기, 번역명, 음역명은 entities[].aliases에 넣는다. 예: Wuhan University / local-script alias / 우한대학교
+12. 다른 언어 표기, 번역명, 음역명은 entities[].aliases에 넣는다. 예: Korea University / 고려대학교 / 高麗大學校
 13. relationships의 source_name과 target_name은 가능하면 known entities의 canonical name을 그대로 사용한다
 """
 

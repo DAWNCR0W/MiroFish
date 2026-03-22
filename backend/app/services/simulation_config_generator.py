@@ -29,8 +29,8 @@ from .graph_entity_reader import EntityNode
 
 logger = get_logger('mirofish.simulation_config')
 
-# 중국 생활 리듬 설정(베이징 시간 기준)
-CHINA_TIMEZONE_CONFIG = {
+# 한국 사용자 생활 리듬 설정(KST 기준)
+KOREA_TIMEZONE_CONFIG = {
     # 심야 시간대(거의 활동 없음)
     "dead_hours": [0, 1, 2, 3, 4, 5],
     # 이른 아침 시간대(서서히 깨어남)
@@ -86,7 +86,7 @@ class AgentActivityConfig:
 
 @dataclass
 class TimeSimulationConfig:
-    """시간 시뮬레이션 설정(중국인 생활 리듬 기준)"""
+    """시간 시뮬레이션 설정(한국 사용자 생활 리듬 기준)"""
     # 시뮬레이션 총 지속 시간(시뮬레이션 시간 수)
     total_simulation_hours: int = 72  # 기본값: 72시간(3일)
 
@@ -97,7 +97,7 @@ class TimeSimulationConfig:
     agents_per_hour_min: int = 5
     agents_per_hour_max: int = 20
 
-    # 피크 시간대(저녁 19-22시, 중국인 활동이 가장 활발한 시간)
+    # 피크 시간대(저녁 19-22시, 한국 사용자 활동이 가장 활발한 시간)
     peak_hours: List[int] = field(default_factory=lambda: [19, 20, 21, 22])
     peak_activity_multiplier: float = 1.5
 
@@ -571,7 +571,7 @@ class SimulationConfigGenerator:
 시간 설정 JSON을 생성하세요.
 
 ### 기본 원칙(참고용이며, 구체적 사건과 참여 집단에 맞게 유연하게 조정):
-- 사용자 집단은 중국 사용자이며, 베이징 시간 생활 리듬에 맞아야 합니다
+- 사용자 집단은 한국 사용자이며, 한국 표준시 생활 리듬에 맞아야 합니다
 - 새벽 0-5시는 거의 활동이 없습니다(활동도 계수 0.05)
 - 오전 6-8시는 점차 활발해집니다(활동도 계수 0.4)
 - 업무 시간 9-18시는 중간 수준으로 활발합니다(활동도 계수 0.7)
@@ -608,7 +608,7 @@ class SimulationConfigGenerator:
 - work_hours (int 배열): 업무 시간대
 - reasoning (string): 이렇게 설정한 이유를 간단히 설명"""
 
-        system_prompt = "당신은 소셜 미디어 시뮬레이션 전문가입니다. 순수 JSON 형식으로 반환하고, 시간 설정은 중국인의 생활 리듬에 맞아야 합니다."
+        system_prompt = "당신은 소셜 미디어 시뮬레이션 전문가입니다. 순수 JSON 형식으로 반환하고, 시간 설정은 한국 사용자의 생활 리듬에 맞아야 합니다."
 
         try:
             return self._call_llm_with_retry(prompt, system_prompt)
@@ -617,7 +617,7 @@ class SimulationConfigGenerator:
             return self._get_default_time_config(num_entities)
 
     def _get_default_time_config(self, num_entities: int) -> Dict[str, Any]:
-        """기본 시간 설정 가져오기(중국인 생활 리듬)"""
+        """기본 시간 설정 가져오기(한국 사용자 생활 리듬)"""
         return {
             "total_simulation_hours": 72,
             "minutes_per_round": 60,  # 각 라운드 1시간, 시간 흐름 가속
@@ -627,7 +627,7 @@ class SimulationConfigGenerator:
             "off_peak_hours": [0, 1, 2, 3, 4, 5],
             "morning_hours": [6, 7, 8],
             "work_hours": [9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
-            "reasoning": "기본 중국 생활 리듬 설정을 사용합니다(각 라운드 1시간)"
+            "reasoning": "기본 한국 사용자 생활 리듬 설정을 사용합니다(각 라운드 1시간)"
         }
 
     def _parse_time_config(self, result: Dict[str, Any], num_entities: int) -> TimeSimulationConfig:
@@ -862,7 +862,7 @@ JSON 형식으로 반환하세요(마크다운 금지):
 
 ## 작업
 각 엔티티에 대해 활동 설정을 생성하되, 주의하세요:
-- **중국인 생활 리듬에 맞춰야 함**: 새벽 0-5시는 거의 활동하지 않고, 저녁 19-22시가 가장 활발합니다
+- **한국 사용자 생활 리듬에 맞춰야 함**: 새벽 0-5시는 거의 활동하지 않고, 저녁 19-22시가 가장 활발합니다
 - **공식 기관**(University/GovernmentAgency): 활동도 낮음(0.1-0.3), 업무 시간(9-17)에 활동, 응답 느림(60-240분), 영향력 높음(2.5-3.0)
 - **미디어**(MediaOutlet): 활동도 중간(0.4-0.6), 하루 종일 활동(8-23), 응답 빠름(5-30분), 영향력 높음(2.0-2.5)
 - **개인**(Student/Person/Alumni): 활동도 높음(0.6-0.9), 주로 저녁에 활동(18-23), 응답 빠름(1-15분), 영향력 낮음(0.8-1.2)
@@ -876,7 +876,7 @@ JSON 형식으로 반환하세요(마크다운 금지):
             "activity_level": <0.0-1.0>,
             "posts_per_hour": <게시 빈도>,
             "comments_per_hour": <댓글 빈도>,
-            "active_hours": [<중국인 생활 리듬을 고려한 활성 시간 목록>],
+            "active_hours": [<한국 사용자 생활 리듬을 고려한 활성 시간 목록>],
             "response_delay_min": <최소 응답 지연 분>,
             "response_delay_max": <최대 응답 지연 분>,
             "sentiment_bias": <-1.0에서 1.0>,
@@ -887,7 +887,7 @@ JSON 형식으로 반환하세요(마크다운 금지):
     ]
 }}"""
 
-        system_prompt = "당신은 소셜 미디어 행동 분석 전문가입니다. 순수 JSON으로 반환하고, 설정은 중국인의 생활 리듬에 맞아야 합니다."
+        system_prompt = "당신은 소셜 미디어 행동 분석 전문가입니다. 순수 JSON으로 반환하고, 설정은 한국 사용자의 생활 리듬에 맞아야 합니다."
 
         try:
             result = self._call_llm_with_retry(prompt, system_prompt)
@@ -929,7 +929,7 @@ JSON 형식으로 반환하세요(마크다운 금지):
         return configs
 
     def _generate_agent_config_by_rule(self, entity: EntityNode) -> Dict[str, Any]:
-        """규칙 기반으로 단일 에이전트 설정 생성(중국인 생활 리듬)"""
+        """규칙 기반으로 단일 에이전트 설정 생성(한국 사용자 생활 리듬)"""
         entity_type = (entity.get_entity_type() or "Unknown").lower()
 
         if entity_type in ["university", "governmentagency", "ngo"]:

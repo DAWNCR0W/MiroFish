@@ -881,8 +881,8 @@ def get_simulation_history():
                 {
                     "simulation_id": "sim_xxxx",
                     "project_id": "proj_xxxx",
-                    "project_name": "우다 여론 분석",
-                    "simulation_requirement": "만약 우한대학이 발표한다면...",
+                    "project_name": "캠퍼스 여론 분석",
+                    "simulation_requirement": "만약 대학 본부가 발표한다면...",
                     "status": "completed",
                     "entities_count": 68,
                     "profiles_count": 68,

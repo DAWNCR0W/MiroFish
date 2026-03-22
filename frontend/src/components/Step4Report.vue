@@ -651,53 +651,33 @@ const parseInsightForge = (text) => {
 
   try {
     // 분석 질문을 추출합니다
-    const queryMatch = matchAny(text, [
-      /분석 질문:\s*(.+?)(?:\n|$)/,
-      /\u5206\u6790\u95ee\u9898:\s*(.+?)(?:\n|$)/
-    ])
+    const queryMatch = text.match(/분석 질문:\s*(.+?)(?:\n|$)/)
     if (queryMatch) result.query = queryMatch[1].trim()
 
     // 예측 시나리오를 추출합니다
-    const reqMatch = matchAny(text, [
-      /예측 시나리오:\s*(.+?)(?:\n|$)/,
-      /\u9884\u6d4b\u573a\u666f:\s*(.+?)(?:\n|$)/
-    ])
+    const reqMatch = text.match(/예측 시나리오:\s*(.+?)(?:\n|$)/)
     if (reqMatch) result.simulationRequirement = reqMatch[1].trim()
 
     // 통계 데이터를 추출합니다 - "관련 예측 사실: X개" 형식과 매칭합니다
-    const factMatch = matchAny(text, [
-      /관련 예측 사실:\s*(\d+)/,
-      /\u76f8\u5173\u9884\u6d4b\u4e8b\u5b9e:\s*(\d+)/
-    ])
-    const entityMatch = matchAny(text, [
-      /관련 엔티티:\s*(\d+)/,
-      /\u76f8\u5173\u5b9e\u4f53:\s*(\d+)/
-    ])
+    const factMatch = text.match(/관련 예측 사실:\s*(\d+)/)
+    const entityMatch = text.match(/관련 엔티티:\s*(\d+)/)
     const relMatch = matchAny(text, [
       /관계 사슬:\s*(\d+)/,
-      /관계망:\s*(\d+)/,
-      /\u5173\u7cfb\u94fe:\s*(\d+)/
+      /관계망:\s*(\d+)/
     ])
     if (factMatch) result.stats.facts = parseInt(factMatch[1])
     if (entityMatch) result.stats.entities = parseInt(entityMatch[1])
     if (relMatch) result.stats.relationships = parseInt(relMatch[1])
 
       // 하위 질문을 추출합니다. 개수 제한은 두지 않습니다.
-    const subQSection = matchAny(text, [
-      /### 분석된 하위 질문\n([\s\S]*?)(?=\n###|$)/,
-      /### \u5206\u6790\u7684하위 질문\n([\s\S]*?)(?=\n###|$)/,
-      /### \u5206\u6790\u7684\u5b50\u95ee\u9898\n([\s\S]*?)(?=\n###|$)/
-    ])
+    const subQSection = text.match(/### 분석된 하위 질문\n([\s\S]*?)(?=\n###|$)/)
     if (subQSection) {
       const lines = subQSection[1].split('\n').filter(l => l.match(/^\d+\./))
       result.subQueries = lines.map(l => l.replace(/^\d+\.\s*/, '').trim()).filter(Boolean)
     }
 
     // 핵심 사실을 추출합니다 - 전체를 추출하며 개수 제한은 두지 않습니다
-    const factsSection = matchAny(text, [
-      /### 【핵심 사실】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/,
-      /### 【\u5173\u952e\u4e8b\u5b9e】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/
-    ])
+    const factsSection = text.match(/### 【핵심 사실】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/)
     if (factsSection) {
       const lines = factsSection[1].split('\n').filter(l => l.match(/^\d+\./))
       result.facts = lines.map(l => {
@@ -707,24 +687,15 @@ const parseInsightForge = (text) => {
     }
 
     // 핵심 엔티티를 추출합니다 - 요약과 관련 사실 수를 포함해 전체를 추출합니다
-    const entitySection = matchAny(text, [
-      /### 【핵심 엔티티】\n([\s\S]*?)(?=\n###|$)/,
-      /### 【\u5173\u952e\u5b9e\u4f53】\n([\s\S]*?)(?=\n###|$)/
-    ])
+    const entitySection = text.match(/### 【핵심 엔티티】\n([\s\S]*?)(?=\n###|$)/)
     if (entitySection) {
       const entityText = entitySection[1]
       // "- **" 기준으로 엔티티 블록을 나눕니다
       const entityBlocks = entityText.split(/\n(?=- \*\*)/).filter(b => b.trim().startsWith('- **'))
       result.entities = entityBlocks.map(block => {
         const nameMatch = block.match(/^-\s*\*\*(.+?)\*\*\s*\((.+?)\)/)
-        const summaryMatch = matchAny(block, [
-          /요약:\s*"?(.+?)"?(?:\n|$)/,
-          /\u6458\u8981:\s*"?(.+?)"?(?:\n|$)/
-        ])
-        const relatedMatch = matchAny(block, [
-          /관련 사실:\s*(\d+)/,
-          /\u76f8\u5173\u4e8b\u5b9e:\s*(\d+)/
-        ])
+        const summaryMatch = block.match(/요약:\s*"?(.+?)"?(?:\n|$)/)
+        const relatedMatch = block.match(/관련 사실:\s*(\d+)/)
         return {
           name: nameMatch ? nameMatch[1].trim() : '',
           type: nameMatch ? nameMatch[2].trim() : '',
@@ -737,8 +708,7 @@ const parseInsightForge = (text) => {
     // 관계망을 추출합니다 - 전체를 추출하며 개수 제한은 두지 않습니다
     const relSection = matchAny(text, [
       /### 【관계 사슬】\n([\s\S]*?)(?=\n###|$)/,
-      /### 【관계망】\n([\s\S]*?)(?=\n###|$)/,
-      /### 【\u5173\u7cfb\u94fe】\n([\s\S]*?)(?=\n###|$)/
+      /### 【관계망】\n([\s\S]*?)(?=\n###|$)/
     ])
     if (relSection) {
       const lines = relSection[1].split('\n').filter(l => l.trim().startsWith('-'))
@@ -768,39 +738,21 @@ const parsePanorama = (text) => {
 
   try {
     // 쿼리를 추출합니다
-    const queryMatch = matchAny(text, [
-      /질문:\s*(.+?)(?:\n|$)/,
-      /\u67e5\u8be2:\s*(.+?)(?:\n|$)/
-    ])
+    const queryMatch = text.match(/질문:\s*(.+?)(?:\n|$)/)
     if (queryMatch) result.query = queryMatch[1].trim()
 
     // 통계 데이터를 추출합니다
-    const nodesMatch = matchAny(text, [
-      /총 노드 수:\s*(\d+)/,
-      /\u603b\u8282\u70b9\u6570:\s*(\d+)/
-    ])
-    const edgesMatch = matchAny(text, [
-      /총 엣지 수:\s*(\d+)/,
-      /\u603b\u8fb9\u6570:\s*(\d+)/
-    ])
-    const activeMatch = matchAny(text, [
-      /현재 유효 사실:\s*(\d+)/,
-      /\u5f53\u524d\u6709\u6548\u4e8b\u5b9e:\s*(\d+)/
-    ])
-    const histMatch = matchAny(text, [
-      /과거\/만료 사실:\s*(\d+)/,
-      /\u5386\u53f2\/\u8fc7\u671f\u4e8b\u5b9e:\s*(\d+)/
-    ])
+    const nodesMatch = text.match(/총 노드 수:\s*(\d+)/)
+    const edgesMatch = text.match(/총 엣지 수:\s*(\d+)/)
+    const activeMatch = text.match(/현재 유효 사실:\s*(\d+)/)
+    const histMatch = text.match(/과거\/만료 사실:\s*(\d+)/)
     if (nodesMatch) result.stats.nodes = parseInt(nodesMatch[1])
     if (edgesMatch) result.stats.edges = parseInt(edgesMatch[1])
     if (activeMatch) result.stats.activeFacts = parseInt(activeMatch[1])
     if (histMatch) result.stats.historicalFacts = parseInt(histMatch[1])
 
     // 현재 유효한 사실을 추출합니다 - 전체를 추출하며 개수 제한은 두지 않습니다
-    const activeSection = matchAny(text, [
-      /### 【현재 유효 사실】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/,
-      /### 【\u5f53\u524d\u6709\u6548\u4e8b\u5b9e】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/
-    ])
+    const activeSection = text.match(/### 【현재 유효 사실】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/)
     if (activeSection) {
       const lines = activeSection[1].split('\n').filter(l => l.match(/^\d+\./))
       result.activeFacts = lines.map(l => {
@@ -811,10 +763,7 @@ const parsePanorama = (text) => {
     }
 
     // 과거/만료 사실을 추출합니다 - 전체를 추출하며 개수 제한은 두지 않습니다
-    const histSection = matchAny(text, [
-      /### 【과거\/만료 사실】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/,
-      /### 【\u5386\u53f2\/\u8fc7\u671f\u4e8b\u5b9e】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/
-    ])
+    const histSection = text.match(/### 【과거\/만료 사실】[\s\S]*?\n([\s\S]*?)(?=\n###|$)/)
     if (histSection) {
       const lines = histSection[1].split('\n').filter(l => l.match(/^\d+\./))
       result.historicalFacts = lines.map(l => {
@@ -853,17 +802,11 @@ const parseInterview = (text) => {
 
   try {
     // 인터뷰 주제를 추출합니다
-    const topicMatch = matchAny(text, [
-      /\*\*인터뷰 주제:\*\*\s*(.+?)(?:\n|$)/,
-      /\*\*\u91c7\u8bbf\u4e3b\u9898:\*\*\s*(.+?)(?:\n|$)/
-    ])
+    const topicMatch = text.match(/\*\*인터뷰 주제:\*\*\s*(.+?)(?:\n|$)/)
     if (topicMatch) result.topic = topicMatch[1].trim()
 
     // 인터뷰 인원을 추출합니다(예: "5 / 9 명의 시뮬레이션 에이전트")
-    const countMatch = matchAny(text, [
-      /\*\*인터뷰 인원:\*\*\s*(\d+)\s*\/\s*(\d+)/,
-      /\*\*\u91c7\u8bbf\u4eba\u6570:\*\*\s*(\d+)\s*\/\s*(\d+)/
-    ])
+    const countMatch = text.match(/\*\*인터뷰 인원:\*\*\s*(\d+)\s*\/\s*(\d+)/)
     if (countMatch) {
       result.successCount = parseInt(countMatch[1])
       result.totalCount = parseInt(countMatch[2])
@@ -871,11 +814,7 @@ const parseInterview = (text) => {
     }
 
     // 인터뷰 대상 선택 이유를 추출합니다
-    const reasonMatch = matchAny(text, [
-      /### 인터뷰 대상 선택 이유\n([\s\S]*?)(?=\n---\n|\n### 인터뷰 기록)/,
-      /### \u91c7\u8bbf\u5bf9\u8c61선택 이유\n([\s\S]*?)(?=\n---\n|\n### \u91c7\u8bbf\u5b9e\u5f55)/,
-      /### \u91c7\u8bbf\u5bf9\u8c61\u9009\u62e9\u7406\u7531\n([\s\S]*?)(?=\n---\n|\n### \u91c7\u8bbf\u5b9e\u5f55)/
-    ])
+    const reasonMatch = text.match(/### 인터뷰 대상 선택 이유\n([\s\S]*?)(?=\n---\n|\n### 인터뷰 기록)/)
     if (reasonMatch) {
       result.selectionReason = reasonMatch[1].trim()
     }
@@ -895,7 +834,7 @@ const parseInterview = (text) => {
         let reasonStart = null
 
         // 형식 1: 숫자. **이름(index=X)**: 이유
-        // 예: 1. **alumni_345(index=1)**: 우한대 동문으로서...
+        // 예: 1. **alumni_345(index=1)**: 고려대 동문으로서...
         headerMatch = line.match(/^\d+\.\s*\*\*([^*（(]+)(?:[（(]index\s*=?\s*\d+[)）])?\*\*[：:]\s*(.*)/)
         if (headerMatch) {
           name = headerMatch[1].trim()
@@ -905,7 +844,7 @@ const parseInterview = (text) => {
         // 형식 2: - 이름 선택(index X): 이유
         // 예: - selected_parent_601(index 0): 학부모 집단의 대표로서...
         if (!headerMatch) {
-          headerMatch = line.match(/^-\s*(?:선택|\u9009\u62e9)([^（(]+)(?:[（(]index\s*=?\s*\d+[)）])?[：:]\s*(.*)/)
+          headerMatch = line.match(/^-\s*선택([^（(]+)(?:[（(]index\s*=?\s*\d+[)）])?[：:]\s*(.*)/)
           if (headerMatch) {
             name = headerMatch[1].trim()
             reasonStart = headerMatch[2]
@@ -930,7 +869,7 @@ const parseInterview = (text) => {
           // 새 사람의 처리를 시작합니다
           currentName = name
           currentReason = reasonStart ? [reasonStart.trim()] : []
-        } else if (currentName && line.trim() && !line.match(/^미선택|^\u672a\u9009|^종합하면|^\u7efc\u4e0a|^최종 선택|^\u6700\u7ec8\u9009\u62e9/)) {
+        } else if (currentName && line.trim() && !line.match(/^미선택|^종합하면|^최종 선택/)) {
           // 이유의 이어지는 줄입니다(끝부분 요약 단락은 제외)
           currentReason.push(line.trim())
         }
@@ -947,7 +886,7 @@ const parseInterview = (text) => {
     const individualReasons = parseIndividualReasons(result.selectionReason)
 
     // 각 인터뷰 기록을 추출합니다
-    const interviewBlocks = text.split(/#### (?:인터뷰|\u91c7\u8bbf) #\d+:/).slice(1)
+    const interviewBlocks = text.split(/#### 인터뷰 #\d+:/).slice(1)
 
     interviewBlocks.forEach((block, index) => {
       const interview = {
@@ -977,10 +916,7 @@ const parseInterview = (text) => {
       }
 
       // 소개를 추출합니다
-      const bioMatch = matchAny(block, [
-        /_소개:\s*([\s\S]*?)_\n/,
-        /_\u7b80\u4ecb:\s*([\s\S]*?)_\n/
-      ])
+      const bioMatch = block.match(/_소개:\s*([\s\S]*?)_\n/)
       if (bioMatch) {
         interview.bio = bioMatch[1].trim().replace(/\.\.\.$/, '...')
       }
@@ -1007,21 +943,15 @@ const parseInterview = (text) => {
 
       // 답변을 추출합니다 - Twitter와 Reddit으로 분리합니다
       const answerMatch = matchAny(block, [
-        /\*\*답변:\*\*\s*([\s\S]*?)(?=\*\*(?:핵심 인용|\u5173\u952e\u5f15\u8a00)|$)/,
-        /\*\*A:\*\*\s*([\s\S]*?)(?=\*\*(?:핵심 인용|\u5173\u952e\u5f15\u8a00)|$)/
+        /\*\*답변:\*\*\s*([\s\S]*?)(?=\*\*핵심 인용|$)/,
+        /\*\*A:\*\*\s*([\s\S]*?)(?=\*\*핵심 인용|$)/
       ])
       if (answerMatch) {
         const answerText = answerMatch[1].trim()
 
         // Twitter와 Reddit 답변을 분리합니다
-        const twitterMatch = matchAny(answerText, [
-          /【트위터 플랫폼 답변】\n?([\s\S]*?)(?=【레딧 플랫폼 답변】|【Reddit\u5e73\u53f0\u56de\u7b54】|$)/,
-          /【Twitter\u5e73\u53f0\u56de\u7b54】\n?([\s\S]*?)(?=【Reddit\u5e73\u53f0\u56de\u7b54】|【레딧 플랫폼 답변】|$)/
-        ])
-        const redditMatch = matchAny(answerText, [
-          /【레딧 플랫폼 답변】\n?([\s\S]*?)$/,
-          /【Reddit\u5e73\u53f0\u56de\u7b54】\n?([\s\S]*?)$/
-        ])
+        const twitterMatch = answerText.match(/【트위터 플랫폼 답변】\n?([\s\S]*?)(?=【레딧 플랫폼 답변】|$)/)
+        const redditMatch = answerText.match(/【레딧 플랫폼 답변】\n?([\s\S]*?)$/)
 
         if (twitterMatch) {
           interview.twitterAnswer = twitterMatch[1].trim()
@@ -1047,15 +977,12 @@ const parseInterview = (text) => {
       }
 
       // 핵심 인용문을 추출합니다(여러 인용 부호 형식과 호환)
-      const quotesMatch = matchAny(block, [
-        /\*\*핵심 인용:\*\*\n([\s\S]*?)(?=\n---|\n####|$)/,
-        /\*\*\u5173\u952e\u5f15\u8a00:\*\*\n([\s\S]*?)(?=\n---|\n####|$)/
-      ])
+      const quotesMatch = block.match(/\*\*핵심 인용:\*\*\n([\s\S]*?)(?=\n---|\n####|$)/)
       if (quotesMatch) {
         const quotesText = quotesMatch[1]
         // 우선 > "text" 형식을 매칭합니다
         let quoteMatches = quotesText.match(/> "([^"]+)"/g)
-        // 폴백: > "text" 또는 > \u201Ctext\u201D(중국어 인용 부호)를 매칭합니다
+        // 폴백: > "text" 또는 > “text” 형식을 함께 매칭합니다
         if (!quoteMatches) {
           quoteMatches = quotesText.match(/> [\u201C""]([^\u201D""]+)[\u201D""]/g)
         }
@@ -1071,10 +998,7 @@ const parseInterview = (text) => {
       }
     })
 
-    const summaryMatch = matchAny(text, [
-      /### 인터뷰 요약 및 핵심 관점\n([\s\S]*?)$/,
-      /### \u91c7\u8bbf\u6458\u8981\u4e0e\u6838\u5fc3\u89c2\u70b9\n([\s\S]*?)$/
-    ])
+    const summaryMatch = text.match(/### 인터뷰 요약 및 핵심 관점\n([\s\S]*?)$/)
     if (summaryMatch) {
       result.summary = summaryMatch[1].trim()
     }
@@ -1096,34 +1020,22 @@ const parseQuickSearch = (text) => {
 
   try {
     // 검색 쿼리를 추출합니다
-    const queryMatch = matchAny(text, [
-      /검색어:\s*(.+?)(?:\n|$)/,
-      /\u641c\u7d22\u67e5\u8be2:\s*(.+?)(?:\n|$)/
-    ])
+    const queryMatch = text.match(/검색어:\s*(.+?)(?:\n|$)/)
     if (queryMatch) result.query = queryMatch[1].trim()
 
     // 결과 수를 추출합니다
-    const countMatch = matchAny(text, [
-      /관련 정보\s*(\d+)건을 찾았습니다/,
-      /\u627e\u5230\s*(\d+)\s*\u6761/
-    ])
+    const countMatch = text.match(/관련 정보\s*(\d+)건을 찾았습니다/)
     if (countMatch) result.count = parseInt(countMatch[1])
 
     // 관련 사실을 추출합니다 - 전체를 추출하며 개수 제한은 두지 않습니다
-    const factsSection = matchAny(text, [
-      /### 관련 사실:\n([\s\S]*?)(?=\n###|$)/,
-      /### \u76f8\u5173\u4e8b\u5b9e:\n([\s\S]*?)(?=\n###|$)/
-    ])
+    const factsSection = text.match(/### 관련 사실:\n([\s\S]*?)(?=\n###|$)/)
     if (factsSection) {
       const lines = factsSection[1].split('\n').filter(l => l.match(/^\d+\./))
       result.facts = lines.map(l => l.replace(/^\d+\.\s*/, '').trim()).filter(Boolean)
     }
 
     // 간선 정보를 추출해 봅니다(있다면)
-    const edgesSection = matchAny(text, [
-      /### 관련 간선:\n([\s\S]*?)(?=\n###|$)/,
-      /### \u76f8\u5173\u8fb9:\n([\s\S]*?)(?=\n###|$)/
-    ])
+    const edgesSection = text.match(/### 관련 간선:\n([\s\S]*?)(?=\n###|$)/)
     if (edgesSection) {
       const lines = edgesSection[1].split('\n').filter(l => l.trim().startsWith('-'))
       result.edges = lines.map(l => {
@@ -1136,10 +1048,7 @@ const parseQuickSearch = (text) => {
     }
 
     // 노드 정보를 추출해 봅니다(있다면)
-    const nodesSection = matchAny(text, [
-      /### 관련 노드:\n([\s\S]*?)(?=\n###|$)/,
-      /### \u76f8\u5173\u8282\u70b9:\n([\s\S]*?)(?=\n###|$)/
-    ])
+    const nodesSection = text.match(/### 관련 노드:\n([\s\S]*?)(?=\n###|$)/)
     if (nodesSection) {
       const lines = nodesSection[1].split('\n').filter(l => l.trim().startsWith('-'))
       result.nodes = lines.map(l => {
@@ -1531,10 +1440,7 @@ const InterviewDisplay = {
       return (
         t === '(해당 플랫폼에서 응답을 받지 못했습니다)' ||
         t === '（해당 플랫폼에서 응답을 받지 못했습니다）' ||
-        t === '（\u8be5\u5e73\u53f0\u672a\u83b7\u5f97\u56de\u590d）' ||
-        t === '(\u8be5\u5e73\u53f0\u672a\u83b7\u5f97\u56de\u590d)' ||
-        t === '[무응답]' ||
-        t === '[\u65e0\u56de\u590d]'
+        t === '[무응답]'
       )
     }
 
@@ -1544,13 +1450,13 @@ const InterviewDisplay = {
       if (isPlaceholderText(answerText)) return ['']
 
       // 두 가지 번호 형식을 지원합니다:
-      // 1. "질문X：" 또는 레거시 한자권 형식
+      // 1. "질문X:"
       // 2. "1. " 또는 "\n1. "(숫자+점, 구식 형식 호환)
       let matches = []
       let match
 
-      // 먼저 "질문X:" 또는 레거시 한자권 형식을 시도합니다
-      const questionPattern = /(?:^|[\r\n]+)(?:질문|\u95ee\u9898)(\d+)[：:]\s*/g
+      // 먼저 "질문X:" 형식을 시도합니다
+      const questionPattern = /(?:^|[\r\n]+)질문(\d+)[：:]\s*/g
       while ((match = questionPattern.exec(answerText)) !== null) {
         matches.push({
           num: parseInt(match[1]),
@@ -1574,7 +1480,7 @@ const InterviewDisplay = {
       // 번호를 찾지 못했거나 하나만 찾으면 전체를 반환합니다
       if (matches.length <= 1) {
         const cleaned = answerText
-          .replace(/^(?:질문|\u95ee\u9898)\d+[：:]\s*/, '')
+          .replace(/^질문\d+[：:]\s*/, '')
           .replace(/^\d+\.\s+/, '')
           .trim()
         return [cleaned || answerText]
@@ -2335,11 +2241,6 @@ const extractFinalContent = (response) => {
   }
 
   // 최종 답변: 뒤의 내용을 찾아 봅니다
-  const legacyFinalMatch = response.match(/\u6700\u7ec8\u7b54\u6848[:：]\s*\n*([\s\S]*)$/i)
-  if (legacyFinalMatch) {
-    return legacyFinalMatch[1].trim()
-  }
-
   // ##, #, > 로 시작하면 직접 입력된 markdown일 수 있습니다
   const trimmedResponse = response.trim()
   if (trimmedResponse.match(/^[#>]/)) {
