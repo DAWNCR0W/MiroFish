@@ -50,7 +50,7 @@
           </div>
           <div class="step-status">
             <span v-if="phase > 1" class="badge success">완료</span>
-            <span v-else-if="phase === 1" class="badge processing">{{ prepareProgress }}%</span>
+            <span v-else-if="phase === 1" class="badge processing">{{ personaProgress }}%</span>
             <span v-else class="badge pending">대기 중</span>
           </div>
         </div>
@@ -655,6 +655,7 @@ const emit = defineEmits(['go-back', 'next-step', 'add-log', 'update-status'])
 const phase = ref(0) // 0: 초기화 중, 1: 페르소나 생성, 2: 설정 생성, 3: 완료
 const taskId = ref(null)
 const prepareProgress = ref(0)
+const currentStageProgress = ref(0)
 const currentStage = ref('')
 const progressMessage = ref('')
 const profiles = ref([])
@@ -709,6 +710,9 @@ let pollTimer = null
 let profilesTimer = null
 let configTimer = null
 let pollFailureCount = 0
+let isRecoveringInterruptedPrepare = false
+let lastInterruptedRecoveryAt = 0
+const INTERRUPTED_RECOVERY_COOLDOWN_MS = 10000
 
 const getPrepareTaskStorageKey = () => {
   return props.simulationId ? `mirofish.prepareTaskId.${props.simulationId}` : ''
@@ -735,6 +739,29 @@ const displayProfiles = computed(() => {
     return profiles.value
   }
   return profiles.value.slice(0, 6)
+})
+
+const personaProgress = computed(() => {
+  if (phase.value !== 1) {
+    return currentStageProgress.value || 0
+  }
+
+  if (currentStageProgress.value > 0) {
+    return currentStageProgress.value
+  }
+
+  const total = Number(expectedTotal.value || 0)
+  const current = profiles.value.length
+  if (total > 0 && current > 0) {
+    return Math.min(100, Math.round((current / total) * 100))
+  }
+
+  if (prepareProgress.value > 0) {
+    const normalized = Math.round(((prepareProgress.value - 20) / 50) * 100)
+    return Math.max(0, Math.min(100, normalized))
+  }
+
+  return 0
 })
 
 // agent_id에 해당하는 username을 가져옵니다
@@ -843,6 +870,66 @@ const startPrepareSimulation = async () => {
   }
 }
 
+const restartInterruptedPrepare = async () => {
+  if (!props.simulationId || isRecoveringInterruptedPrepare) return
+
+  const now = Date.now()
+  if (now - lastInterruptedRecoveryAt < INTERRUPTED_RECOVERY_COOLDOWN_MS) {
+    return
+  }
+
+  lastInterruptedRecoveryAt = now
+  isRecoveringInterruptedPrepare = true
+  taskId.value = null
+  persistPrepareTaskId(null)
+
+  try {
+    phase.value = 1
+    emit('update-status', 'processing')
+    addLog('백엔드 재시작으로 중단된 준비 작업을 다시 시작합니다...')
+
+    const res = await prepareSimulation({
+      simulation_id: props.simulationId,
+      use_llm_for_profiles: true,
+      parallel_profile_count: 5
+    })
+
+    if (res.success && res.data) {
+      if (res.data.already_prepared) {
+        addLog('재시작 중 이미 준비 완료된 상태를 감지했습니다')
+        stopPolling()
+        stopProfilesPolling()
+        await loadPreparedData()
+        return
+      }
+
+      if (res.data.task_id) {
+        taskId.value = res.data.task_id
+        persistPrepareTaskId(res.data.task_id)
+        addLog(`  └─ 새 작업 ID: ${res.data.task_id}`)
+      }
+
+      if (res.data.expected_entities_count) {
+        expectedTotal.value = res.data.expected_entities_count
+      }
+
+      progressMessage.value = res.data.message || '중단된 준비 작업을 다시 시작했습니다'
+
+      if (!pollTimer) startPolling()
+      if (!profilesTimer) startProfilesPolling()
+      return
+    }
+
+    addLog(`준비 재시작 실패: ${res.error || '알 수 없는 오류'}`)
+    emit('update-status', 'error')
+  } catch (err) {
+    addLog(`준비 재시작 중 예외 발생: ${err.message}`)
+    emit('update-status', 'error')
+  } finally {
+    isRecoveringInterruptedPrepare = false
+  }
+}
+
 const startPolling = () => {
   pollTimer = setInterval(pollPrepareStatus, 2000)
 }
@@ -899,7 +986,6 @@ const pollPrepareStatus = async () => {
             addLog('기존 준비 작업을 다시 연결하는 중...')
           }
           await fetchProfilesRealtime()
-          return
         }
       }
     }
@@ -912,6 +998,23 @@ const pollPrepareStatus = async () => {
     if (res.success && res.data) {
       const data = res.data
 
+      if (!taskId.value && data.task_id) {
+        taskId.value = data.task_id
+        persistPrepareTaskId(data.task_id)
+      }
+
+      if (
+        data.status === 'interrupted' ||
+        (
+          data.status === 'not_started' &&
+          phase.value === 1 &&
+          (profiles.value.length > 0 || expectedTotal.value)
+        )
+      ) {
+        await restartInterruptedPrepare()
+        return
+      }
+
       // 진행률을 갱신합니다
       prepareProgress.value = data.progress || 0
       progressMessage.value = data.message || ''
@@ -919,6 +1022,7 @@ const pollPrepareStatus = async () => {
       // 단계 정보를 해석하고 상세 로그를 출력합니다
       if (data.progress_detail) {
         currentStage.value = data.progress_detail.current_stage_name || ''
+        currentStageProgress.value = data.progress_detail.stage_progress || 0
 
         // 상세 진행 로그를 출력합니다(중복 방지)
         const detail = data.progress_detail
@@ -933,6 +1037,7 @@ const pollPrepareStatus = async () => {
           }
         }
       } else if (data.message) {
+        currentStageProgress.value = 0
         // 메시지에서 단계를 추출합니다
         const match = data.message.match(/\[(\d+)\/(\d+)\]\s*([^:]+)/)
         if (match) {

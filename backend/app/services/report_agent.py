@@ -1723,8 +1723,30 @@ class ReportAgent:
         
         # 완료된 장 제목 목록(진행 추적용)
         completed_section_titles = []
-        
+
         try:
+            def emit_progress(
+                stage: str,
+                progress: int,
+                message: str,
+                current_section: str = None,
+            ) -> None:
+                normalized_progress = progress
+                if stage != "failed":
+                    normalized_progress = max(0, min(100, int(progress)))
+
+                ReportManager.update_progress(
+                    report_id,
+                    stage,
+                    normalized_progress,
+                    message,
+                    current_section=current_section,
+                    completed_sections=completed_section_titles,
+                )
+
+                if progress_callback and stage != "failed":
+                    progress_callback(stage, normalized_progress, message)
+
             # 초기화: 보고서 폴더를 만들고 초기 상태를 저장합니다
             ReportManager._ensure_report_folder(report_id)
             
@@ -1739,28 +1761,22 @@ class ReportAgent:
             # 콘솔 로그 기록기를 초기화합니다(console_log.txt)
             self.console_logger = ReportConsoleLogger(report_id)
             
-            ReportManager.update_progress(
-                report_id, "pending", 0, "보고서를 초기화하는 중입니다...",
-                completed_sections=[]
-            )
+            emit_progress("pending", 0, "보고서를 초기화하는 중입니다...")
             ReportManager.save_report(report)
             
             # 단계 1: 대요약 기획
             report.status = ReportStatus.PLANNING
-            ReportManager.update_progress(
-                report_id, "planning", 5, "보고서 대요약 기획을 시작합니다...",
-                completed_sections=[]
-            )
+            emit_progress("planning", 5, "보고서 대요약 기획을 시작합니다...")
             
             # 기획 시작 로그를 기록합니다
             self.report_logger.log_planning_start()
             
-            if progress_callback:
-                progress_callback("planning", 0, "보고서 대요약 기획을 시작합니다...")
-            
             outline = self.plan_outline(
-                progress_callback=lambda stage, prog, msg: 
-                    progress_callback(stage, prog // 5, msg) if progress_callback else None
+                progress_callback=lambda stage, prog, msg: emit_progress(
+                    "planning",
+                    5 + int(max(0, min(100, prog)) * 0.1),
+                    msg,
+                )
             )
 
             if not outline.sections:
@@ -1773,10 +1789,7 @@ class ReportAgent:
             
             # 대요약을 파일에 저장합니다
             ReportManager.save_outline(report_id, outline)
-            ReportManager.update_progress(
-                report_id, "planning", 15, f"대요약 기획 완료, 총 {len(outline.sections)}개 장",
-                completed_sections=[]
-            )
+            emit_progress("planning", 15, f"대요약 기획 완료, 총 {len(outline.sections)}개 장")
             ReportManager.save_report(report)
             
             logger.info(f"대요약을 파일에 저장했습니다: {report_id}/outline.json")
@@ -1792,31 +1805,24 @@ class ReportAgent:
                 base_progress = 20 + int((i / total_sections) * 70)
                 
                 # 진행 상황을 업데이트합니다
-                ReportManager.update_progress(
-                    report_id, "generating", base_progress,
+                emit_progress(
+                    "generating",
+                    base_progress,
                     f"장 생성 중: {section.title} ({section_num}/{total_sections})",
                     current_section=section.title,
-                    completed_sections=completed_section_titles
                 )
-                
-                if progress_callback:
-                    progress_callback(
-                        "generating", 
-                        base_progress, 
-                        f"장 생성 중: {section.title} ({section_num}/{total_sections})"
-                    )
                 
                 # 본문 장 내용을 생성합니다
                 section_content = self._generate_section_react(
                     section=section,
                     outline=outline,
                     previous_sections=generated_sections,
-                    progress_callback=lambda stage, prog, msg:
-                        progress_callback(
-                            stage, 
-                            base_progress + int(prog * 0.7 / total_sections),
-                            msg
-                        ) if progress_callback else None,
+                    progress_callback=lambda stage, prog, msg: emit_progress(
+                        "generating",
+                        base_progress + int(max(0, min(100, prog)) * 0.7 / total_sections),
+                        msg,
+                        current_section=section.title,
+                    ),
                     section_index=section_num
                 )
                 
@@ -1840,22 +1846,14 @@ class ReportAgent:
                 logger.info(f"장을 저장했습니다: {report_id}/section_{section_num:02d}.md")
                 
                 # 진행 상황을 업데이트합니다
-                ReportManager.update_progress(
-                    report_id, "generating", 
+                emit_progress(
+                    "generating",
                     base_progress + int(70 / total_sections),
                     f"{section.title} 장이 완료되었습니다",
-                    current_section=None,
-                    completed_sections=completed_section_titles
                 )
             
             # 단계 3: 전체 보고서를 조립합니다
-            if progress_callback:
-                progress_callback("generating", 95, "전체 보고서를 조립하는 중입니다...")
-            
-            ReportManager.update_progress(
-                report_id, "generating", 95, "전체 보고서를 조립하는 중입니다...",
-                completed_sections=completed_section_titles
-            )
+            emit_progress("generating", 95, "전체 보고서를 조립하는 중입니다...")
             
             # ReportManager를 사용해 전체 보고서를 조립합니다
             report.markdown_content = ReportManager.assemble_full_report(report_id, outline)
@@ -1874,13 +1872,7 @@ class ReportAgent:
             
             # 최종 보고서를 저장합니다
             ReportManager.save_report(report)
-            ReportManager.update_progress(
-                report_id, "completed", 100, "보고서 생성이 완료되었습니다",
-                completed_sections=completed_section_titles
-            )
-            
-            if progress_callback:
-                progress_callback("completed", 100, "보고서 생성이 완료되었습니다")
+            emit_progress("completed", 100, "보고서 생성이 완료되었습니다")
             
             logger.info(f"보고서 생성이 완료되었습니다: {report_id}")
             

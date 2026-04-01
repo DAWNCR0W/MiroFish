@@ -58,7 +58,7 @@
                       <path d="M12 2a10 10 0 0 1 10 10" stroke-width="4" stroke="#4B5563" stroke-linecap="round"></path>
                     </svg>
                   </div>
-                  <span class="loading-text">{{ section.title }} 생성 중...</span>
+                  <span class="loading-text">{{ section.title }} 생성 중... {{ getSectionProgressPercent(idx + 1) }}%</span>
                 </div>
               </div>
             </div>
@@ -104,6 +104,10 @@
               <span class="metric-value mono">{{ completedSections }}/{{ totalSections }}</span>
             </div>
             <div class="metric">
+              <span class="metric-label">진행률</span>
+              <span class="metric-value mono">{{ overallProgress }}%</span>
+            </div>
+            <div class="metric">
               <span class="metric-label">경과 시간</span>
               <span class="metric-value mono">{{ formatElapsedTime }}</span>
             </div>
@@ -113,6 +117,16 @@
             </div>
             <div class="metric metric-right">
               <span class="metric-pill" :class="`pill--${statusClass}`">{{ statusText }}</span>
+            </div>
+          </div>
+
+          <div class="workflow-progress">
+            <div class="workflow-progress-bar">
+              <div class="workflow-progress-fill" :style="{ width: `${overallProgress}%` }"></div>
+            </div>
+            <div class="workflow-progress-row">
+              <span class="workflow-progress-message">{{ progressMessage || '진행 상황을 준비하는 중입니다...' }}</span>
+              <span class="workflow-progress-percent mono">{{ overallProgress }}%</span>
             </div>
           </div>
 
@@ -134,6 +148,7 @@
                   <span class="wf-step-title">{{ step.title }}</span>
                   <span class="wf-step-meta mono" v-if="step.meta">{{ step.meta }}</span>
                 </div>
+                <div class="wf-step-detail" v-if="step.detail">{{ step.detail }}</div>
               </div>
             </div>
           </div>
@@ -403,7 +418,7 @@
 <script setup>
 import { ref, computed, watch, onUnmounted, nextTick, h, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { getAgentLog, getConsoleLog, getReport, getReportSections } from '../api/report'
+import { getAgentLog, getConsoleLog, getReport, getReportProgress, getReportSections } from '../api/report'
 import { warnLog } from '../utils/logger'
 
 const router = useRouter()
@@ -431,6 +446,7 @@ const consoleLogLine = ref(0)
 const reportOutline = ref(null)
 const currentSectionIndex = ref(null)
 const generatedSections = ref({})
+const reportProgress = ref(null)
 const expandedContent = ref(new Set())
 const expandedLogs = ref(new Set())
 const collapsedSections = ref(new Set())
@@ -449,6 +465,7 @@ const resetReportState = () => {
   reportOutline.value = null
   currentSectionIndex.value = null
   generatedSections.value = {}
+  reportProgress.value = null
   expandedContent.value = new Set()
   expandedLogs.value = new Set()
   collapsedSections.value = new Set()
@@ -472,6 +489,8 @@ const applyPersistedReportData = (reportData) => {
     currentSectionIndex.value = null
     emit('update-status', 'completed')
   }
+
+  syncCurrentSectionFromProgress()
 }
 
 const applyPersistedSections = (sections) => {
@@ -486,13 +505,51 @@ const applyPersistedSections = (sections) => {
   generatedSections.value = nextSections
 }
 
+const syncCurrentSectionFromProgress = () => {
+  const progress = reportProgress.value
+  const sections = reportOutline.value?.sections || []
+
+  if (!progress || sections.length === 0) return
+
+  if (progress.status === 'completed') {
+    currentSectionIndex.value = null
+    return
+  }
+
+  const currentTitle = progress.current_section
+  if (!currentTitle) return
+
+  const idx = sections.findIndex(section => section?.title === currentTitle)
+  if (idx >= 0) {
+    currentSectionIndex.value = idx + 1
+  }
+}
+
+const applyProgressData = (progressData) => {
+  if (!progressData) return
+
+  reportProgress.value = progressData
+  syncCurrentSectionFromProgress()
+
+  if (progressData.status === 'completed') {
+    isComplete.value = true
+    currentSectionIndex.value = null
+    emit('update-status', 'completed')
+  } else if (progressData.status === 'failed') {
+    emit('update-status', 'error')
+  } else if (['planning', 'generating', 'pending'].includes(progressData.status)) {
+    emit('update-status', 'processing')
+  }
+}
+
 const loadPersistedReportState = async () => {
   if (!props.reportId) return
 
   try {
-    const [reportRes, sectionsRes] = await Promise.all([
+    const [reportRes, sectionsRes, progressRes] = await Promise.all([
       getReport(props.reportId),
-      getReportSections(props.reportId)
+      getReportSections(props.reportId),
+      getReportProgress(props.reportId).catch(() => null)
     ])
 
     if (reportRes.success && reportRes.data) {
@@ -514,6 +571,10 @@ const loadPersistedReportState = async () => {
         currentSectionIndex.value = null
         emit('update-status', 'completed')
       }
+    }
+
+    if (progressRes?.success && progressRes.data) {
+      applyProgressData(progressRes.data)
     }
   } catch (err) {
     warnLog('저장된 보고서 데이터를 불러오지 못했습니다:', err)
@@ -1816,13 +1877,18 @@ const QuickSearchDisplay = {
 
 // 계산 속성
 const statusClass = computed(() => {
-  if (isComplete.value) return 'completed'
+  if (reportProgress.value?.status === 'failed') return 'error'
+  if (isComplete.value || reportProgress.value?.status === 'completed') return 'completed'
+  if (reportProgress.value?.status === 'planning' || reportProgress.value?.status === 'generating') return 'processing'
   if (agentLogs.value.length > 0) return 'processing'
   return 'pending'
 })
 
 const statusText = computed(() => {
-  if (isComplete.value) return '완료'
+  if (reportProgress.value?.status === 'failed') return '오류'
+  if (isComplete.value || reportProgress.value?.status === 'completed') return '완료'
+  if (reportProgress.value?.status === 'planning') return '기획 중'
+  if (reportProgress.value?.status === 'generating') return '생성 중'
   if (agentLogs.value.length > 0) return '생성 중...'
   return '대기 중'
 })
@@ -1831,13 +1897,28 @@ const totalSections = computed(() => {
   return reportOutline.value?.sections?.length || 0
 })
 
+const completedSectionTitles = computed(() => {
+  return Array.isArray(reportProgress.value?.completed_sections)
+    ? reportProgress.value.completed_sections
+    : []
+})
+
 const completedSections = computed(() => {
-  return Object.keys(generatedSections.value).length
+  return Math.max(Object.keys(generatedSections.value).length, completedSectionTitles.value.length)
 })
 
 const progressPercent = computed(() => {
+  if (typeof reportProgress.value?.progress === 'number') {
+    return Math.max(0, Math.min(100, Math.round(reportProgress.value.progress)))
+  }
   if (totalSections.value === 0) return 0
   return Math.round((completedSections.value / totalSections.value) * 100)
+})
+
+const overallProgress = computed(() => progressPercent.value)
+
+const progressMessage = computed(() => {
+  return reportProgress.value?.message || ''
 })
 
 const totalToolCalls = computed(() => {
@@ -1893,6 +1974,31 @@ const activeStep = computed(() => {
   return steps[0] || { noLabel: '--', title: '시작 대기', status: 'todo', meta: '' }
 })
 
+const getRangePercent = (current, start, end) => {
+  if (current <= start) return 0
+  if (current >= end) return 100
+  if (end <= start) return 0
+  return Math.max(0, Math.min(100, Math.round(((current - start) / (end - start)) * 100)))
+}
+
+const getPlanningProgressPercent = () => {
+  return getRangePercent(overallProgress.value, 0, 15)
+}
+
+const getSectionProgressPercent = (sectionIndex) => {
+  const total = totalSections.value
+  if (!total || sectionIndex < 1 || sectionIndex > total) return 0
+  if (isSectionCompleted(sectionIndex)) return 100
+
+  const start = 20 + ((sectionIndex - 1) / total) * 70
+  const end = 20 + (sectionIndex / total) * 70
+  return getRangePercent(overallProgress.value, start, end)
+}
+
+const getCompletionProgressPercent = () => {
+  return getRangePercent(overallProgress.value, 90, 100)
+}
+
 const workflowSteps = computed(() => {
   const steps = []
 
@@ -1903,7 +2009,8 @@ const workflowSteps = computed(() => {
     noLabel: 'PL',
     title: '기획 / 개요',
     status: planningStatus,
-    meta: planningStatus === 'active' ? '진행 중' : ''
+    meta: `${planningStatus === 'done' ? 100 : getPlanningProgressPercent()}%`,
+    detail: planningStatus === 'active' ? progressMessage.value : ''
   })
 
   // 섹션(개요가 있으면)
@@ -1919,7 +2026,8 @@ const workflowSteps = computed(() => {
       noLabel: String(idx).padStart(2, '0'),
       title: section.title,
       status,
-      meta: status === 'active' ? '진행 중' : ''
+      meta: `${status === 'done' ? 100 : getSectionProgressPercent(idx)}%`,
+      detail: status === 'active' ? progressMessage.value : ''
     })
   })
 
@@ -1930,7 +2038,8 @@ const workflowSteps = computed(() => {
     noLabel: 'OK',
     title: '완료',
     status: completeStatus,
-    meta: completeStatus === 'active' ? '마무리 중' : ''
+    meta: `${completeStatus === 'done' ? 100 : getCompletionProgressPercent()}%`,
+    detail: completeStatus === 'active' ? progressMessage.value : ''
   })
 
   return steps
@@ -1941,8 +2050,12 @@ const addLog = (msg) => {
   emit('add-log', msg)
 }
 
-const isSection완료 = (sectionIndex) => {
-  return !!generatedSections.value[sectionIndex]
+const isSectionCompleted = (sectionIndex) => {
+  const sectionTitle = reportOutline.value?.sections?.[sectionIndex - 1]?.title
+  return (
+    !!generatedSections.value[sectionIndex]
+    || (!!sectionTitle && completedSectionTitles.value.includes(sectionTitle))
+  )
 }
 
 const formatTime = (timestamp) => {
@@ -2129,6 +2242,7 @@ const getLogLevelClass = (log) => {
 // 폴링
 let agentLogTimer = null
 let consoleLogTimer = null
+let progressTimer = null
 
 const responseHasToolCall = (response) => {
   if (!response) return false
@@ -2168,6 +2282,7 @@ const fetchAgentLog = async () => {
 
           if (log.action === 'planning_complete' && log.details?.outline) {
             reportOutline.value = log.details.outline
+            syncCurrentSectionFromProgress()
           }
 
           if (log.action === 'section_start') {
@@ -2287,14 +2402,29 @@ const fetchConsoleLog = async () => {
   }
 }
 
+const fetchProgress = async () => {
+  if (!props.reportId) return
+
+  try {
+    const res = await getReportProgress(props.reportId)
+    if (res.success && res.data) {
+      applyProgressData(res.data)
+    }
+  } catch (err) {
+    warnLog('보고서 진행률을 불러오지 못했습니다:', err)
+  }
+}
+
 const startPolling = () => {
-  if (agentLogTimer || consoleLogTimer) return
+  if (agentLogTimer || consoleLogTimer || progressTimer) return
 
   fetchAgentLog()
   fetchConsoleLog()
+  fetchProgress()
 
   agentLogTimer = setInterval(fetchAgentLog, 2000)
   consoleLogTimer = setInterval(fetchConsoleLog, 1500)
+  progressTimer = setInterval(fetchProgress, 1500)
 }
 
 const stopPolling = () => {
@@ -2305,6 +2435,10 @@ const stopPolling = () => {
   if (consoleLogTimer) {
     clearInterval(consoleLogTimer)
     consoleLogTimer = null
+  }
+  if (progressTimer) {
+    clearInterval(progressTimer)
+    progressTimer = null
   }
 }
 
@@ -2916,10 +3050,62 @@ watch(() => props.reportId, async (newId) => {
   color: #065F46;
 }
 
+.metric-pill.pill--error {
+  background: #FEF2F2;
+  border-color: #FECACA;
+  color: #991B1B;
+}
+
 .metric-pill.pill--pending {
   background: transparent;
   border-style: dashed;
   color: #6B7280;
+}
+
+.workflow-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 0 14px 0;
+}
+
+.workflow-progress-bar {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: #F3F4F6;
+  overflow: hidden;
+}
+
+.workflow-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #111827 0%, #4B5563 100%);
+  transition: width 0.25s ease;
+}
+
+.workflow-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.workflow-progress-message {
+  font-size: 12px;
+  color: #4B5563;
+  line-height: 1.5;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-progress-percent {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: #111827;
+  flex-shrink: 0;
 }
 
 .workflow-steps {
@@ -3028,6 +3214,14 @@ watch(() => props.reportId, async (newId) => {
 .wf-step--todo .wf-step-title,
 .wf-step--todo .wf-step-index {
   color: var(--wf-todo-text);
+}
+
+.wf-step-detail {
+  margin-top: 6px;
+  padding-left: 21px;
+  font-size: 12px;
+  color: #6B7280;
+  line-height: 1.5;
 }
 
 .workflow-divider {

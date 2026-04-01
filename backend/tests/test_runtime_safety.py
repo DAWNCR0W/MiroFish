@@ -1,9 +1,19 @@
 import json
 
+import app.api.simulation as simulation_api_module
+from app import create_app
 from app.config import Config
 from app.api.simulation import _check_simulation_prepared
+from app.models.task import TaskManager, TaskStatus
+from app.services.simulation_manager import SimulationState, SimulationStatus
 from app.utils.api_errors import strip_debug_error_fields
 from app.utils.retry import retry_with_backoff
+
+
+class TestConfig:
+    DEBUG = True
+    TESTING = True
+    SECRET_KEY = "test"
 
 
 def test_check_simulation_prepared_accepts_single_platform_files(monkeypatch, tmp_path):
@@ -73,3 +83,86 @@ def test_retry_callback_failure_does_not_break_retry_flow():
 
     assert flaky_call() == "ok"
     assert attempts["count"] == 2
+
+
+def test_prepare_status_recovers_active_task_by_simulation_id(monkeypatch):
+    app = create_app(TestConfig)
+    monkeypatch.setattr(
+        simulation_api_module,
+        "_check_simulation_prepared",
+        lambda simulation_id: (False, {}),
+    )
+
+    task_manager = TaskManager()
+    with task_manager._task_lock:
+        original_tasks = dict(task_manager._tasks)
+        task_manager._tasks = {}
+
+    try:
+        task_id = task_manager.create_task(
+            task_type="simulation_prepare",
+            metadata={"simulation_id": "sim_resume"},
+        )
+        task_manager.update_task(
+            task_id,
+            status=TaskStatus.PROCESSING,
+            progress=42,
+            message="프로필 생성 중...",
+        )
+
+        client = app.test_client()
+        response = client.post(
+            "/api/simulation/prepare/status",
+            json={"simulation_id": "sim_resume"},
+        )
+
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert payload["success"] is True
+        assert payload["data"]["task_id"] == task_id
+        assert payload["data"]["status"] == "processing"
+        assert payload["data"]["progress"] == 42
+        assert payload["data"]["already_prepared"] is False
+    finally:
+        with task_manager._task_lock:
+            task_manager._tasks = original_tasks
+
+
+def test_prepare_status_reports_interrupted_when_preparing_without_task(monkeypatch):
+    app = create_app(TestConfig)
+    monkeypatch.setattr(
+        simulation_api_module,
+        "_check_simulation_prepared",
+        lambda simulation_id: (False, {}),
+    )
+    monkeypatch.setattr(
+        simulation_api_module.SimulationManager,
+        "get_simulation",
+        lambda self, simulation_id: SimulationState(
+            simulation_id=simulation_id,
+            project_id="proj_test",
+            graph_id="graph_test",
+            status=SimulationStatus.PREPARING,
+        ),
+    )
+
+    task_manager = TaskManager()
+    with task_manager._task_lock:
+        original_tasks = dict(task_manager._tasks)
+        task_manager._tasks = {}
+
+    try:
+        client = app.test_client()
+        response = client.post(
+            "/api/simulation/prepare/status",
+            json={"simulation_id": "sim_interrupted"},
+        )
+
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert payload["success"] is True
+        assert payload["data"]["status"] == "interrupted"
+        assert payload["data"]["already_prepared"] is False
+    finally:
+        with task_manager._task_lock:
+            task_manager._tasks = original_tasks

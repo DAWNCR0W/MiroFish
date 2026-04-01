@@ -696,6 +696,7 @@ class GraphToolsService:
             simulation_requirement=simulation_requirement,
             max_agents=max_agents,
         )
+        selected_agents = self.profile_localizer.localize_profiles(selected_agents)
         result.selected_agents = selected_agents
         result.selection_reasoning = selection_reasoning
 
@@ -714,19 +715,11 @@ class GraphToolsService:
         )
 
         try:
-            interviews_request = [{"agent_id": agent_idx, "prompt": optimized_prompt} for agent_idx in selected_indices]
-            api_result = SimulationRunner.interview_agents_batch(
+            results_dict, interview_errors = self._collect_interview_results(
                 simulation_id=simulation_id,
-                interviews=interviews_request,
-                platform=None,
-                timeout=180.0,
+                selected_indices=selected_indices,
+                prompt=optimized_prompt,
             )
-
-            if not api_result.get("success", False):
-                result.summary = f"인터뷰 API 호출에 실패했습니다: {api_result.get('error', '알 수 없는 오류')}."
-                return result
-
-            results_dict = api_result.get("result", {}).get("results", {})
             for position, agent_idx in enumerate(selected_indices):
                 agent = selected_agents[position]
                 agent_name = agent.get("realname", agent.get("username", f"에이전트_{agent_idx}"))
@@ -750,6 +743,9 @@ class GraphToolsService:
                 meaningful.sort(key=len, reverse=True)
                 key_quotes = [text + "。" for text in meaningful[:3]]
 
+                if not (twitter_response or reddit_response):
+                    continue
+
                 result.interviews.append(
                     AgentInterview(
                         agent_name=agent_name,
@@ -762,6 +758,12 @@ class GraphToolsService:
                 )
 
             result.interviewed_count = len(result.interviews)
+            if not result.interviews and interview_errors:
+                result.summary = (
+                    "인터뷰 과정에서 오류가 발생했습니다: "
+                    + "; ".join(interview_errors[:3])
+                )
+                return result
         except ValueError as error:
             result.summary = f"인터뷰에 실패했습니다: {error}. 시뮬레이션 환경이 종료되었을 수 있습니다."
             return result
@@ -773,6 +775,178 @@ class GraphToolsService:
         if result.interviews:
             result.summary = self._generate_interview_summary(result.interviews, interview_requirement)
         return result
+
+    def _collect_interview_results(
+        self,
+        simulation_id: str,
+        selected_indices: List[int],
+        prompt: str,
+    ) -> tuple[Dict[str, Dict[str, Any]], List[str]]:
+        from .simulation_runner import SimulationRunner
+
+        platforms = self._get_available_interview_platforms(simulation_id)
+        platform_count = max(1, len(platforms))
+        batch_size = min(Config.REPORT_INTERVIEW_BATCH_SIZE, max(1, len(selected_indices)))
+
+        aggregated_results: Dict[str, Dict[str, Any]] = {}
+        aggregated_errors: List[str] = []
+
+        for start in range(0, len(selected_indices), batch_size):
+            chunk_indices = selected_indices[start:start + batch_size]
+            chunk_results, chunk_errors = self._run_interview_chunk(
+                runner_cls=SimulationRunner,
+                simulation_id=simulation_id,
+                agent_indices=chunk_indices,
+                prompt=prompt,
+                platform_count=platform_count,
+            )
+            aggregated_results.update(chunk_results)
+            aggregated_errors.extend(chunk_errors)
+
+        return aggregated_results, aggregated_errors
+
+    def _run_interview_chunk(
+        self,
+        runner_cls: Any,
+        simulation_id: str,
+        agent_indices: List[int],
+        prompt: str,
+        platform_count: int,
+    ) -> tuple[Dict[str, Dict[str, Any]], List[str]]:
+        if not agent_indices:
+            return {}, []
+
+        if len(agent_indices) == 1:
+            return self._run_single_interview(
+                runner_cls=runner_cls,
+                simulation_id=simulation_id,
+                agent_idx=agent_indices[0],
+                prompt=prompt,
+                platform_count=platform_count,
+            )
+
+        interviews_request = [{"agent_id": agent_idx, "prompt": prompt} for agent_idx in agent_indices]
+        timeout = self._estimate_interview_timeout(len(agent_indices), platform_count)
+
+        try:
+            api_result = runner_cls.interview_agents_batch(
+                simulation_id=simulation_id,
+                interviews=interviews_request,
+                platform=None,
+                timeout=timeout,
+            )
+            if api_result.get("success", False):
+                return self._normalize_batch_interview_results(api_result), []
+
+            error_message = str(api_result.get("error", "알 수 없는 오류"))
+        except Exception as error:
+            error_message = str(error)
+
+        logger.warning(
+            "일괄 인터뷰 청크가 실패했습니다. 개별 인터뷰로 재시도합니다: simulation_id=%s, agents=%s, error=%s",
+            simulation_id,
+            agent_indices,
+            error_message,
+        )
+
+        fallback_results: Dict[str, Dict[str, Any]] = {}
+        fallback_errors: List[str] = []
+        for agent_idx in agent_indices:
+            single_results, single_errors = self._run_single_interview(
+                runner_cls=runner_cls,
+                simulation_id=simulation_id,
+                agent_idx=agent_idx,
+                prompt=prompt,
+                platform_count=platform_count,
+            )
+            fallback_results.update(single_results)
+            fallback_errors.extend(single_errors)
+
+        if not fallback_results:
+            fallback_errors.insert(0, error_message)
+
+        return fallback_results, fallback_errors
+
+    def _run_single_interview(
+        self,
+        runner_cls: Any,
+        simulation_id: str,
+        agent_idx: int,
+        prompt: str,
+        platform_count: int,
+    ) -> tuple[Dict[str, Dict[str, Any]], List[str]]:
+        timeout = self._estimate_interview_timeout(1, platform_count)
+        try:
+            api_result = runner_cls.interview_agent(
+                simulation_id=simulation_id,
+                agent_id=agent_idx,
+                prompt=prompt,
+                platform=None,
+                timeout=timeout,
+            )
+        except Exception as error:
+            return {}, [f"{agent_idx}번 에이전트 인터뷰 실패: {error}"]
+
+        if not api_result.get("success", False):
+            error_message = api_result.get("error", "알 수 없는 오류")
+            return {}, [f"{agent_idx}번 에이전트 인터뷰 실패: {error_message}"]
+
+        return self._normalize_single_interview_result(agent_idx, api_result), []
+
+    def _get_available_interview_platforms(self, simulation_id: str) -> List[str]:
+        simulation_dir = os.path.join(Config.UPLOAD_FOLDER, "simulations", simulation_id)
+        env_status_path = os.path.join(simulation_dir, "env_status.json")
+
+        if os.path.exists(env_status_path):
+            try:
+                with open(env_status_path, "r", encoding="utf-8") as file:
+                    status = json.load(file)
+                platforms = []
+                if status.get("twitter_available"):
+                    platforms.append("twitter")
+                if status.get("reddit_available"):
+                    platforms.append("reddit")
+                if platforms:
+                    return platforms
+            except (OSError, json.JSONDecodeError, TypeError) as error:
+                logger.warning("인터뷰 플랫폼 상태를 읽지 못했습니다: %s", error)
+
+        platforms = []
+        for platform_name in ("twitter", "reddit"):
+            if os.path.exists(os.path.join(simulation_dir, f"{platform_name}_simulation.db")):
+                platforms.append(platform_name)
+
+        return platforms or ["twitter", "reddit"]
+
+    @staticmethod
+    def _normalize_batch_interview_results(api_result: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        return api_result.get("result", {}).get("results", {}) or {}
+
+    @staticmethod
+    def _normalize_single_interview_result(
+        agent_idx: int,
+        api_result: Dict[str, Any],
+    ) -> Dict[str, Dict[str, Any]]:
+        raw_result = api_result.get("result", {}) or {}
+        if "platforms" in raw_result:
+            normalized_results = {}
+            for platform_name, platform_result in raw_result.get("platforms", {}).items():
+                result_payload = dict(platform_result or {})
+                result_payload["platform"] = platform_name
+                normalized_results[f"{platform_name}_{agent_idx}"] = result_payload
+            return normalized_results
+
+        platform_name = raw_result.get("platform") or "twitter"
+        result_payload = dict(raw_result)
+        result_payload["platform"] = platform_name
+        return {f"{platform_name}_{agent_idx}": result_payload}
+
+    @staticmethod
+    def _estimate_interview_timeout(agent_count: int, platform_count: int) -> float:
+        timeout = Config.REPORT_INTERVIEW_BASE_TIMEOUT
+        timeout += max(0, agent_count - 1) * Config.REPORT_INTERVIEW_PER_AGENT_TIMEOUT
+        timeout += max(0, platform_count - 1) * Config.REPORT_INTERVIEW_PER_PLATFORM_TIMEOUT
+        return min(timeout, Config.REPORT_INTERVIEW_MAX_TIMEOUT)
 
     @staticmethod
     def _clean_tool_call_response(response: str) -> str:
@@ -794,14 +968,14 @@ class GraphToolsService:
         return response
 
     def _load_agent_profiles(self, simulation_id: str) -> List[Dict[str, Any]]:
-        sim_dir = os.path.join(os.path.dirname(__file__), f"../../uploads/simulations/{simulation_id}")
+        sim_dir = os.path.join(Config.UPLOAD_FOLDER, "simulations", simulation_id)
         reddit_profile_path = os.path.join(sim_dir, "reddit_profiles.json")
         twitter_profile_path = os.path.join(sim_dir, "twitter_profiles.csv")
 
         if os.path.exists(reddit_profile_path):
             with open(reddit_profile_path, "r", encoding="utf-8") as file:
                 profiles = json.load(file)
-            return self.profile_localizer.adapt_and_localize_profiles(profiles, platform="reddit")
+            return self.profile_localizer.adapt_profiles(profiles, platform="reddit")
 
         profiles: List[Dict[str, Any]] = []
         if os.path.exists(twitter_profile_path):
@@ -817,7 +991,7 @@ class GraphToolsService:
                             "profession": "미상",
                         }
                     )
-        return self.profile_localizer.adapt_and_localize_profiles(profiles, platform="twitter")
+        return self.profile_localizer.adapt_profiles(profiles, platform="twitter")
 
     def _select_agents_for_interview(
         self,

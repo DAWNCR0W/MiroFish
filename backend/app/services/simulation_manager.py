@@ -491,9 +491,12 @@ class SimulationManager:
         self,
         profiles: List[Dict[str, Any]],
         platform: str = "reddit",
+        localize: bool = True,
     ) -> List[Dict[str, Any]]:
         """프런트 공통 표시 형식으로 맞추고 한국어 UI 기준으로 정리한다."""
-        return self.profile_localizer.adapt_and_localize_profiles(profiles, platform)
+        if localize:
+            return self.profile_localizer.adapt_and_localize_profiles(profiles, platform)
+        return self.profile_localizer.adapt_profiles(profiles, platform)
 
     def _load_profiles_from_storage(self, sim_dir: str, platform: str) -> List[Dict[str, Any]]:
         """저장 파일에서 프로필을 읽는다."""

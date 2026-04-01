@@ -164,6 +164,15 @@ class ProfileLocalizationService:
         adapted = [self._adapt_profile_shape(profile, platform) for profile in profiles]
         return self.localize_profiles(adapted)
 
+    def adapt_profiles(
+        self,
+        profiles: List[Dict[str, Any]],
+        platform: str = "reddit",
+    ) -> List[Dict[str, Any]]:
+        """스토리지 형식을 UI 공통 형식으로 맞추되 LLM 번역은 수행하지 않는다."""
+        adapted = [self._adapt_profile_shape(profile, platform) for profile in profiles]
+        return [self._normalize_profile_values(profile) for profile in adapted]
+
     def localize_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
         """단일 프로필을 한국어 UI용으로 정리한다."""
         localized = self.localize_profiles([profile])
@@ -201,10 +210,12 @@ class ProfileLocalizationService:
             batch_indices = pending_indices[start:start + self.TRANSLATION_BATCH_SIZE]
             batch_cache_keys = pending_cache_keys[start:start + self.TRANSLATION_BATCH_SIZE]
             translated_batch = self._translate_batch(batch_payloads)
-            if not translated_batch:
+            if not translated_batch or not any(isinstance(item, dict) for item in translated_batch):
                 continue
 
             for profile_index, cache_key, translated in zip(batch_indices, batch_cache_keys, translated_batch):
+                if not isinstance(translated, dict):
+                    continue
                 merged = self._merge_translated_fields(normalized[profile_index], translated)
                 normalized[profile_index] = merged
                 self._translation_cache[cache_key] = dict(merged)
@@ -297,6 +308,15 @@ class ProfileLocalizationService:
         cleaned.pop(self.TRANSLATION_INDEX_FIELD, None)
         return cleaned
 
+    def _looks_like_translated_profile(self, data: Any) -> bool:
+        if not isinstance(data, dict):
+            return False
+
+        return any(
+            field in data
+            for field in (*self.TRANSLATABLE_FIELDS, "interested_topics")
+        )
+
     def _align_translated_profiles(
         self,
         translated_profiles: Any,
@@ -340,6 +360,28 @@ class ProfileLocalizationService:
 
         return [item for item in aligned if item is not None]
 
+    def _extract_translated_profiles(
+        self,
+        data: Any,
+        payload_count: int,
+    ) -> List[Dict[str, Any]]:
+        if not isinstance(data, dict):
+            raise ValueError("번역 응답의 JSON 형식이 올바르지 않습니다")
+
+        translated_profiles = data.get("profiles")
+        if translated_profiles is not None:
+            return self._align_translated_profiles(translated_profiles, payload_count)
+
+        if payload_count == 1:
+            single_profile = data.get("profile")
+            if self._looks_like_translated_profile(single_profile):
+                return [self._strip_translation_metadata(single_profile)]
+
+            if self._looks_like_translated_profile(data):
+                return [self._strip_translation_metadata(data)]
+
+        raise ValueError("번역 응답에 profiles 배열이 없습니다")
+
     def _merge_translated_fields(
         self,
         profile: Dict[str, Any],
@@ -366,10 +408,9 @@ class ProfileLocalizationService:
         payload = self._build_translation_payload(profile)
         return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
-    def _translate_batch(self, payloads: List[Dict[str, Any]]) -> Optional[List[Dict[str, Any]]]:
-        """한자 계열 프로필 필드를 한국어 UI 문장으로 번역한다."""
+    def _request_translation_batch(self, payloads: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not payloads or not self.client:
-            return None
+            return []
 
         request_payloads = []
         for index, payload in enumerate(payloads):
@@ -401,8 +442,60 @@ class ProfileLocalizationService:
 
             content = extract_structured_response_text(response.choices[0].message)
             data = json.loads(content)
-            translated_profiles = data.get("profiles")
-            return self._align_translated_profiles(translated_profiles, len(payloads))
-        except Exception as error:
-            logger.warning("프로필 한국어 현지화 번역에 실패했습니다: %s", error)
+            return self._extract_translated_profiles(data, len(payloads))
+        except Exception:
+            raise
+
+    def _retry_translation_per_profile(
+        self,
+        payloads: List[Dict[str, Any]],
+    ) -> tuple[List[Optional[Dict[str, Any]]], List[str]]:
+        recovered: List[Optional[Dict[str, Any]]] = [None] * len(payloads)
+        failures: List[str] = []
+
+        for index, payload in enumerate(payloads):
+            try:
+                translated = self._request_translation_batch([payload])
+                if translated and isinstance(translated[0], dict):
+                    recovered[index] = translated[0]
+                    continue
+                failures.append(f"{index}:empty")
+            except Exception as error:
+                failures.append(f"{index}:{error}")
+
+        return recovered, failures
+
+    def _translate_batch(self, payloads: List[Dict[str, Any]]) -> Optional[List[Optional[Dict[str, Any]]]]:
+        """한자 계열 프로필 필드를 한국어 UI 문장으로 번역한다."""
+        if not payloads or not self.client:
+            return None
+
+        try:
+            return self._request_translation_batch(payloads)
+        except Exception as batch_error:
+            if len(payloads) == 1:
+                logger.warning("프로필 한국어 현지화 번역에 실패했습니다: %s", batch_error)
+                return None
+
+            recovered, failures = self._retry_translation_per_profile(payloads)
+            recovered_count = sum(1 for item in recovered if isinstance(item, dict))
+            if recovered_count == len(payloads):
+                logger.info(
+                    "프로필 한국어 현지화 배치 번역 응답이 불완전해 개별 재시도로 복구했습니다: batch_size=%s, error=%s",
+                    len(payloads),
+                    batch_error,
+                )
+                return recovered
+
+            if recovered_count > 0:
+                logger.warning(
+                    "프로필 한국어 현지화 번역 일부만 복구했습니다: batch_error=%s, recovered=%s/%s, failures=%s",
+                    batch_error,
+                    recovered_count,
+                    len(payloads),
+                    "; ".join(failures[:5]),
+                )
+                return recovered
+
+            logger.warning("프로필 한국어 현지화 번역에 실패했습니다: %s", batch_error)
             return None

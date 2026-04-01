@@ -43,6 +43,14 @@ export const getReport = (reportId) => {
 }
 
 /**
+ * 보고서 생성 진행률을 가져옵니다.
+ * @param {string} reportId
+ */
+export const getReportProgress = (reportId) => {
+  return service.get(`/api/report/${reportId}/progress`)
+}
+
+/**
  * 생성된 보고서 섹션 목록을 가져옵니다.
  * @param {string} reportId
  */

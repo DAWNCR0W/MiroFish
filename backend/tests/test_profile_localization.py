@@ -183,6 +183,160 @@ def test_profile_localizer_accepts_same_length_response_without_translation_inde
     assert result[0]["interested_topics"] == ["ETF"]
 
 
+def test_profile_localizer_adapts_profiles_without_llm_translation(monkeypatch):
+    service = ProfileLocalizationService(api_key="")
+    service.client = object()
+
+    def fail_translate(_payloads):
+        raise AssertionError("LLM translation should not run for adapt_profiles")
+
+    monkeypatch.setattr(service, "_translate_batch", fail_translate)
+
+    result = service.adapt_profiles([
+        {
+            "description": "日本市場の動向を追っています。",
+            "user_char": "長期投資家向けアカウントです。",
+            "profession": "student",
+            "country": "US",
+            "interested_topics": ["General", "Technology"],
+            "name": "MacroWatcher",
+        }
+    ], platform="twitter")
+
+    assert result[0]["bio"] == "日本市場の動向を追っています。"
+    assert result[0]["persona"] == "長期投資家向けアカウントです。"
+    assert result[0]["profession"] == "학생"
+    assert result[0]["country"] == "미국"
+    assert result[0]["interested_topics"] == ["일반", "기술"]
+    assert result[0]["username"] == "MacroWatcher"
+
+
+def test_profile_localizer_recovers_malformed_batch_via_single_retries(monkeypatch):
+    service = ProfileLocalizationService(api_key="")
+    service.client = object()
+    service._translation_cache = {}
+    call_batch_sizes = []
+
+    def fake_create_chat_completion(*args, **kwargs):
+        request_body = json.loads(kwargs["messages"][1]["content"])
+        payloads = request_body["profiles"]
+        call_batch_sizes.append(len(payloads))
+
+        if len(payloads) == 3:
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=json.dumps(
+                                {
+                                    "profiles": [
+                                        {
+                                            "_translation_index": 0,
+                                            "bio": "첫 번째 소개 번역",
+                                            "persona": "첫 번째 페르소나 번역",
+                                            "profession": "연구원",
+                                            "country": "중국",
+                                            "interested_topics": ["AI"],
+                                        }
+                                    ]
+                                },
+                                ensure_ascii=False,
+                            ),
+                            reasoning_content=None,
+                        )
+                    )
+                ]
+            )
+
+        bio = payloads[0]["bio"]
+        if bio == "第一個人物介紹":
+            content = json.dumps(
+                {
+                    "bio": "첫 번째 소개 번역",
+                    "persona": "첫 번째 페르소나 번역",
+                    "profession": "연구원",
+                    "country": "중국",
+                    "interested_topics": ["AI"],
+                },
+                ensure_ascii=False,
+            )
+        elif bio == "日本市場の動向を追っています。":
+            content = json.dumps(
+                {
+                    "profile": {
+                        "bio": "두 번째 소개 번역",
+                        "persona": "두 번째 페르소나 번역",
+                        "profession": "시장 분석가",
+                        "country": "일본",
+                        "interested_topics": ["거시경제"],
+                    }
+                },
+                ensure_ascii=False,
+            )
+        else:
+            content = json.dumps(
+                {
+                    "profiles": [
+                        {
+                            "_translation_index": 0,
+                            "bio": "세 번째 소개 번역",
+                            "persona": "세 번째 페르소나 번역",
+                            "profession": "전략가",
+                            "country": "대한민국",
+                            "interested_topics": ["정책"],
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+            )
+
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=content,
+                        reasoning_content=None,
+                    )
+                )
+            ]
+        )
+
+    monkeypatch.setattr(
+        profile_localization_module,
+        "create_chat_completion_with_fallback",
+        fake_create_chat_completion,
+    )
+
+    result = service.localize_profiles([
+        {
+            "bio": "第一個人物介紹",
+            "persona": "第一個人物設定",
+            "profession": "研究者",
+            "country": "中国",
+            "interested_topics": ["AI"],
+        },
+        {
+            "bio": "日本市場の動向を追っています。",
+            "persona": "長期投資家向けアカウントです。",
+            "profession": "アナリスト",
+            "country": "日本",
+            "interested_topics": ["マクロ経済"],
+        },
+        {
+            "bio": "韓国の政策変化を追います。",
+            "persona": "公共政策の観察者です。",
+            "profession": "ストラテジスト",
+            "country": "韓国",
+            "interested_topics": ["政策"],
+        },
+    ])
+
+    assert result[0]["bio"] == "첫 번째 소개 번역"
+    assert result[1]["bio"] == "두 번째 소개 번역"
+    assert result[2]["bio"] == "세 번째 소개 번역"
+    assert call_batch_sizes == [3, 1, 1, 1]
+
+
 def test_oasis_profile_generator_prompts_require_korean_output():
     generator = OasisProfileGenerator.__new__(OasisProfileGenerator)
 

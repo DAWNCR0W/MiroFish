@@ -5,6 +5,7 @@ Step2: 그래프 엔티티 읽기 및 필터링, OASIS 시뮬레이션 준비와
 
 import os
 import traceback
+from datetime import datetime
 from flask import request, jsonify, send_file
 
 from . import simulation_bp
@@ -41,6 +42,44 @@ def optimize_interview_prompt(prompt: str) -> str:
     if prompt.startswith(INTERVIEW_PROMPT_PREFIX):
         return prompt
     return f"{INTERVIEW_PROMPT_PREFIX}{prompt}"
+
+
+def _find_prepare_task_for_simulation(task_manager, simulation_id: str):
+    """simulation_id에 연결된 최신 prepare task를 찾는다."""
+    if not simulation_id:
+        return None
+
+    matching_tasks = [
+        task for task in task_manager.list_tasks(task_type="simulation_prepare")
+        if (task.get("metadata") or {}).get("simulation_id") == simulation_id
+    ]
+    if not matching_tasks:
+        return None
+
+    active_statuses = {"pending", "processing"}
+    for task in matching_tasks:
+        if task.get("status") in active_statuses:
+            return task
+
+    return matching_tasks[0]
+
+
+def _cleanup_incomplete_prepare_outputs(simulation_id: str):
+    """중단된 prepare의 부분 산출물을 정리한다."""
+    sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
+    removed_files = []
+
+    for filename in ("reddit_profiles.json", "twitter_profiles.csv", "simulation_config.json"):
+        path = os.path.join(sim_dir, filename)
+        if not os.path.exists(path):
+            continue
+        try:
+            os.remove(path)
+            removed_files.append(filename)
+        except OSError as error:
+            logger.warning("중단된 prepare 산출물 정리에 실패했습니다: simulation_id=%s, file=%s, error=%s", simulation_id, filename, error)
+
+    return removed_files
 
 
 def _runner_result_response(action: str, result: dict, *, failure_status: int = 409, **context):
@@ -454,6 +493,8 @@ def prepare_simulation():
         force_regenerate = data.get('force_regenerate', False)
         logger.info(f"/prepare 요청 처리 시작: simulation_id={simulation_id}, force_regenerate={force_regenerate}")
 
+        task_manager = TaskManager()
+
         # 이미 준비가 완료되었는지 확인한다. (중복 생성 방지)
         if not force_regenerate:
             logger.debug(f"시뮬레이션 {simulation_id}의 준비 완료 여부를 확인하는 중...")
@@ -473,6 +514,36 @@ def prepare_simulation():
                 })
             else:
                 logger.info(f"시뮬레이션 {simulation_id}가 아직 준비되지 않아 준비 작업을 시작함")
+
+            existing_prepare_task = _find_prepare_task_for_simulation(task_manager, simulation_id)
+            if existing_prepare_task and existing_prepare_task.get("status") in {"pending", "processing"}:
+                logger.info("이미 진행 중인 prepare 작업을 재사용합니다: simulation_id=%s, task_id=%s", simulation_id, existing_prepare_task.get("task_id"))
+                return jsonify({
+                    "success": True,
+                    "data": {
+                        "simulation_id": simulation_id,
+                        "task_id": existing_prepare_task.get("task_id"),
+                        "status": existing_prepare_task.get("status"),
+                        "progress": existing_prepare_task.get("progress", 0),
+                        "message": "이미 진행 중인 준비 작업을 이어서 사용합니다",
+                        "already_prepared": False,
+                        "expected_entities_count": state.entities_count,
+                        "entity_types": state.entity_types,
+                    }
+                })
+
+            if state.status == SimulationStatus.PREPARING:
+                removed_files = _cleanup_incomplete_prepare_outputs(simulation_id)
+                state.profiles_count = 0
+                state.config_generated = False
+                state.error = None
+                state.updated_at = datetime.now().isoformat()
+                manager._save_simulation_state(state)
+                logger.warning(
+                    "중단된 prepare를 새 작업으로 재시작합니다: simulation_id=%s, removed_files=%s",
+                    simulation_id,
+                    removed_files,
+                )
 
         # 프로젝트에서 필요한 정보를 가져온다.
         project = ProjectManager.get_project(state.project_id)
@@ -517,7 +588,6 @@ def prepare_simulation():
             # 실패해도 이후 흐름에는 영향이 없으며, 백그라운드 작업이 다시 가져온다.
 
         # 비동기 작업을 생성한다.
-        task_manager = TaskManager()
         task_id = task_manager.create_task(
             task_type="simulation_prepare",
             metadata={
@@ -716,9 +786,35 @@ def get_prepare_status():
                     }
                 })
 
+        task_manager = TaskManager()
+
+        # task_id가 없더라도 simulation_id로 진행 중인 prepare task를 다시 찾는다.
+        if not task_id and simulation_id:
+            matched_task = _find_prepare_task_for_simulation(task_manager, simulation_id)
+            if matched_task:
+                matched_task["already_prepared"] = False
+                return jsonify({
+                    "success": True,
+                    "data": matched_task
+                })
+
         # task_id가 없으면 오류를 반환한다.
         if not task_id:
             if simulation_id:
+                manager = SimulationManager()
+                state = manager.get_simulation(simulation_id)
+                if state and state.status == SimulationStatus.PREPARING:
+                    return jsonify({
+                        "success": True,
+                        "data": {
+                            "simulation_id": simulation_id,
+                            "status": "interrupted",
+                            "progress": 0,
+                            "message": "백엔드 재시작 등으로 준비 작업이 중단되었습니다. /api/simulation/prepare를 다시 호출해 주세요",
+                            "already_prepared": False
+                        }
+                    })
+
                 # simulation_id는 있지만 아직 준비되지 않음
                 return jsonify({
                     "success": True,
@@ -735,12 +831,19 @@ def get_prepare_status():
                 "error": "task_id 또는 simulation_id를 제공해 주세요"
             }), 400
 
-        task_manager = TaskManager()
         task = task_manager.get_task(task_id)
 
         if not task:
             # 작업이 존재하지 않지만 simulation_id가 있으면 준비 완료 여부를 확인한다.
             if simulation_id:
+                matched_task = _find_prepare_task_for_simulation(task_manager, simulation_id)
+                if matched_task:
+                    matched_task["already_prepared"] = False
+                    return jsonify({
+                        "success": True,
+                        "data": matched_task
+                    })
+
                 is_prepared, prepare_info = _check_simulation_prepared(simulation_id)
                 if is_prepared:
                     return jsonify({
@@ -753,6 +856,21 @@ def get_prepare_status():
                             "message": "작업이 완료됨 (준비 작업이 이미 존재함)",
                             "already_prepared": True,
                             "prepare_info": prepare_info
+                        }
+                    })
+
+                manager = SimulationManager()
+                state = manager.get_simulation(simulation_id)
+                if state and state.status == SimulationStatus.PREPARING:
+                    return jsonify({
+                        "success": True,
+                        "data": {
+                            "simulation_id": simulation_id,
+                            "task_id": task_id,
+                            "status": "interrupted",
+                            "progress": 0,
+                            "message": "백엔드 재시작 등으로 준비 작업이 중단되었습니다. /api/simulation/prepare를 다시 호출해 주세요",
+                            "already_prepared": False
                         }
                     })
 
@@ -1088,9 +1206,6 @@ def get_simulation_profiles_realtime(simulation_id: str):
                 logger.warning(f"profiles 파일 읽기 실패 (아직 쓰는 중일 수 있음): {e}")
                 profiles = []
 
-        manager = SimulationManager()
-        profiles = manager.normalize_profiles_for_display(profiles, platform)
-
         # 생성 중인지 확인한다. (state.json 기준)
         is_generating = False
         total_expected = None
@@ -1105,6 +1220,13 @@ def get_simulation_profiles_realtime(simulation_id: str):
                     total_expected = state_data.get("entities_count")
             except Exception:
                 pass
+
+        manager = SimulationManager()
+        profiles = manager.normalize_profiles_for_display(
+            profiles,
+            platform,
+            localize=not is_generating,
+        )
 
         return jsonify({
             "success": True,

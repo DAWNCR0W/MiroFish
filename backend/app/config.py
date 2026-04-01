@@ -76,6 +76,11 @@ class Config:
     # Report Agent 설정
     REPORT_AGENT_MAX_TOOL_CALLS = int(os.environ.get('REPORT_AGENT_MAX_TOOL_CALLS', '5'))
     REPORT_AGENT_MAX_REFLECTION_ROUNDS = int(os.environ.get('REPORT_AGENT_MAX_REFLECTION_ROUNDS', '2'))
+    REPORT_INTERVIEW_BASE_TIMEOUT = float(os.environ.get('REPORT_INTERVIEW_BASE_TIMEOUT', '180'))
+    REPORT_INTERVIEW_PER_AGENT_TIMEOUT = float(os.environ.get('REPORT_INTERVIEW_PER_AGENT_TIMEOUT', '90'))
+    REPORT_INTERVIEW_PER_PLATFORM_TIMEOUT = float(os.environ.get('REPORT_INTERVIEW_PER_PLATFORM_TIMEOUT', '60'))
+    REPORT_INTERVIEW_MAX_TIMEOUT = float(os.environ.get('REPORT_INTERVIEW_MAX_TIMEOUT', '900'))
+    REPORT_INTERVIEW_BATCH_SIZE = max(1, int(os.environ.get('REPORT_INTERVIEW_BATCH_SIZE', '2')))
     @classmethod
     def validate(cls):
         """필수 설정을 검증한다"""
